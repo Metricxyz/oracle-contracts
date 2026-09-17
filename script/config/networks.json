@@ -1,0 +1,29 @@
+{
+  "ethereum": {
+    "deployments": {
+      "priceProviderFactory": "0x050502eE4Da0eE2a9D44eE6046310F9f1532aCF2",
+      "compressedOracle": "0xE844701934D9C6085B292e428F41b911cC0b3872",
+      "dataStreamsOracle": "0x810A649974f21bB6D3b2E781597EdBDAabe82228",
+      "anchoredProviderFactory": "0xb0eAE19259500Ac4Ca59b9a5cb8cDB2Da8076F0A",
+      "pythOracle": "0x30a88bf894D1b806125a23ebf23D715496fD7102"
+    }
+  },
+  "base": {
+    "deployments": {
+      "priceProviderFactory": "0x050502eE4Da0eE2a9D44eE6046310F9f1532aCF2",
+      "pythOracle": "0x30a88bf894D1b806125a23ebf23D715496fD7102",
+      "compressedOracle": "0xE844701934D9C6085B292e428F41b911cC0b3872",
+      "dataStreamsOracle": "0x810A649974f21bB6D3b2E781597EdBDAabe82228",
+      "anchoredProviderFactory": "0xb0eAE19259500Ac4Ca59b9a5cb8cDB2Da8076F0A"
+    }
+  },
+  "hyperevm": {
+    "deployments": {
+      "priceProviderFactory": "0x050502eE4Da0eE2a9D44eE6046310F9f1532aCF2",
+      "pythOracle": "0x30a88bf894D1b806125a23ebf23D715496fD7102",
+      "compressedOracle": "0xE844701934D9C6085B292e428F41b911cC0b3872",
+      "dataStreamsOracle": "0x810A649974f21bB6D3b2E781597EdBDAabe82228",
+      "anchoredProviderFactory": "0xb0eAE19259500Ac4Ca59b9a5cb8cDB2Da8076F0A"
+    }
+  }
+}

@@ -1,0 +1,60 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      - run: forge fmt --check
+      - run: forge build --sizes
+      # Guard: the CompressedOracle push path is the raw-calldata fallback, kept selector-safe by a
+      # leading zero byte on the calldata — which only works because no external selector starts with
+      # 0x00. Fail if a newly-added function reintroduces that collision.
+      - name: Push-selector safety (no CompressedOracleV1 selector starts with 0x00)
+        run: |
+          sels="$(forge inspect contracts/oracles/compressed/CompressedOracle.sol:CompressedOracleV1 methods | grep -oiE '[0-9a-f]{8}' | tr 'A-F' 'a-f' | sort -u)"
+          if printf '%s\n' "$sels" | grep -q '^00'; then
+            echo "ERROR: a CompressedOracleV1 selector starts with 0x00 — the push fallback's zero-byte prefix no longer avoids all collisions:" >&2
+            printf '%s\n' "$sels" | grep '^00' >&2
+            exit 1
+          fi
+          echo "OK: no CompressedOracleV1 selector starts with 0x00."
+      - run: forge test -vv
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run gitleaks
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest git /repo
+  examples:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/mm-pusher-ts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: examples/mm-pusher-ts/package-lock.json
+      - run: npm ci
+      - run: npm run fmt:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run demo

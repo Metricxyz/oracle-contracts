@@ -1,0 +1,32 @@
+{
+  "name": "mm-pusher-example",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "fmt": "prettier --write .",
+    "fmt:check": "prettier --check .",
+    "demo": "bash demo/anvil-demo.sh",
+    "vectors:regen": "bash demo/regen-vectors.sh",
+    "test:live": "RUN_LIVE=1 vitest run test/chainlink-live.test.ts",
+    "test:live:push": "RUN_LIVE=1 RUN_LIVE_PUSH=1 vitest run test/chainlink-live.test.ts"
+  },
+  "dependencies": {
+    "ethers": "^6.13.0",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.8",
+    "@types/ws": "^8.18.1",
+    "prettier": "^3.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "~5.8.0",
+    "vitest": "^3.0.0"
+  }
+}

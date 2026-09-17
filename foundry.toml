@@ -1,0 +1,35 @@
+[profile.default]
+src = "contracts"
+out = "out"
+libs = ["node_modules", "lib"]
+remappings = [
+    "forge-std/=lib/forge-std/src/",
+    "@openzeppelin/=lib/openzeppelin-contracts/",
+]
+ignored_error_codes = [2018]
+fs_permissions = [{ access = "read-write", path = "./script/config"}]
+
+
+no_match_path = "*/stash*"
+
+evm_version = 'prague'
+solc = '0.8.33'
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+
+[rpc_endpoints]
+ethereum  = "${RPC_ETHEREUM}"
+base      = "${RPC_BASE}"
+arbitrum  = "${RPC_ARBITRUM}"
+optimism  = "${RPC_OPTIMISM}"
+polygon   = "${RPC_POLYGON}"
+bsc       = "${RPC_BSC}"
+avalanche = "${RPC_AVALANCHE}"
+berachain = "${RPC_BERACHAIN}"
+megaeth   = "${RPC_MEGAETH}"
+monad     = "${RPC_MONAD}"
+hyperevm  = "${RPC_HYPEREVM}"
+robinhood = "${RPC_ROBINHOOD}"
+
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

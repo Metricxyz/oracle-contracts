@@ -1,0 +1,20 @@
+{
+  "name": "@axima-labs/oracle-contracts",
+  "version": "1.0.0",
+  "license": "SEE LICENSE IN licenses/",
+  "type": "module",
+  "scripts": {
+    "registry:update": "node contract-registry/update.mjs",
+    "addresses:check": "node scripts/check-doc-addresses.mjs",
+    "addresses:regen": "node scripts/regen-retired-addresses.mjs",
+    "coverage": "COVERAGE_MODE=1 forge coverage --ir-minimum --report lcov && genhtml -o coverage lcov.info --branch-coverage",
+    "coverage:serve": "npx http-server ./coverage/"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.8",
+    "forge-std": "github:foundry-rs/forge-std#v1.9.4",
+    "prettier": "^3.0.0",
+    "prettier-plugin-solidity": "^1.3.1",
+    "typescript": "~5.8.0"
+  }
+}

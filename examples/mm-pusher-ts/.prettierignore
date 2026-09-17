@@ -1,0 +1,4 @@
+node_modules
+src/compressed/codebook.json
+test/vectors.json
+package-lock.json

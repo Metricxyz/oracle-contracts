@@ -1,0 +1,45 @@
+.vscode
+# Node modules
+/node_modules
+
+# Compilation output
+/dist
+
+# pnpm deploy output
+/bundle
+
+# Hardhat Build Artifacts
+/artifacts
+
+# Hardhat compilation (v2) support directory
+/cache
+
+# Typechain output
+/types
+
+# Hardhat coverage reports
+/coverage
+
+
+/out
+/bin
+lcov.info
+var/*
+
+broadcast/
+.env
+
+*.bkp*
+
+.slither
+.aderyn
+
+package-lock.json
+
+# examples packages
+examples/**/node_modules/
+!examples/mm-pusher-ts/package-lock.json
+
+
+# macOS Finder metadata
+.DS_Store
