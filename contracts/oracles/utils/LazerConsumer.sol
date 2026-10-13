@@ -28,7 +28,7 @@ import {IOffchainOracle} from "../../interfaces/IOffchainOracle.sol";
 /// Property config is encoded once in the constructor into three immutables:
 ///   - `PROP_CONFIG`          – 4-bit size per property ID (0 = disallowed)
 ///   - `EXPECTED_MASK`        – bitmask of expected property IDs
-///   - `EXPECTED_PROPS_COUNT` – popcount of EXPECTED_MASK
+///   - `EXPECTED_PROPS_COUNT` – length of the configured property list (its popcount when the IDs are distinct)
 contract LazerConsumer {
     using SafeCast for *;
 
@@ -89,7 +89,8 @@ contract LazerConsumer {
     /// @dev Bitmask where bit `i` is set if property ID `i` is expected in every feed.
     uint256 private immutable EXPECTED_MASK;
 
-    /// @dev Number of expected properties (popcount of EXPECTED_MASK).
+    /// @dev Number of expected properties: the configured list's length (the popcount of
+    ///      EXPECTED_MASK when the IDs are distinct).
     /// Used for early `numProps` validation before parsing individual properties.
     uint256 private immutable EXPECTED_PROPS_COUNT;
 
@@ -159,8 +160,9 @@ contract LazerConsumer {
                 if (normPrice == 0) continue;
 
                 TimeMs ts = toTimeMs(tsMs);
-                // Skip a beyond-drift future timestamp instead of reverting the whole packet. Every
-                // other per-feed anomaly in this loop `continue`s precisely so one bad feed cannot
+                // Skip a beyond-drift future timestamp instead of reverting the whole packet. The
+                // other data anomalies in this loop `continue` (a normalization revert — exponent out of
+                // [-57, 57] or a uint64 overflow — still sinks the packet) so one bad feed cannot
                 // stop unrelated feeds in the same Lazer-signed packet — and the relayer cannot
                 // repackage a signed packet to drop the offender. A single publisher whose clock
                 // runs beyond MAX_TIME_DRIFT stalls only itself, and its own staleness bound is

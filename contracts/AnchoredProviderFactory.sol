@@ -10,8 +10,10 @@ import {IAnchoredProviderFactory} from "./interfaces/IAnchoredProviderFactory.so
 
 /// @notice Anchor Factory: deploys AnchoredPriceProviders against an ADMIN-curated allow-list of
 ///         reference oracles, with clamp parameters validated against multisig-tuned pair-class
-///         envelopes. createAnchoredProvider names which allow-listed oracle to anchor to; public-pool
-///         eligibility is then the machine-checkable predicate `recognizedFactory.isProvider(p)`.
+///         envelopes. createAnchoredProvider names which allow-listed oracle to anchor to; provenance is
+///         then the machine-checkable predicate `recognizedFactory.isProvider(p)`. It proves the provider
+///         came from this factory within its envelope — not that its feeds have data, that its pair
+///         matches them, or that a pool may read them.
 ///         The allow-list starts EMPTY at construction and is populated/curated via addOracle /
 ///         removeOracle (admin) — removal only blocks NEW providers; already-deployed providers keep
 ///         their immutable oracle and stay isProvider()==true.
@@ -96,8 +98,9 @@ contract AnchoredProviderFactory is AccessControl, Multicall, IAnchoredProviderF
 
     function setEnvelope(bytes32 classId, Envelope calldata envelope) external override onlyRole(ADMIN_ROLE) {
         // Reject empty class and inverted ranges, AND any corner that the provider constructor would
-        // reject — so every point inside an accepted envelope is constructor-valid and create() can
-        // only fail with ParamsOutOfEnvelope, never a confusing provider revert.
+        // reject — so every in-envelope value of the three bounded parameters is constructor-valid and,
+        // for those, create() fails with ParamsOutOfEnvelope rather than a provider revert. marginStep,
+        // the token pair and the initial config are not envelope-bound and can still revert there.
         //
         // There is no band-width corner: the provider has no construction-time band bound to
         // mirror. Saturated feeds and an upper interval deviation plus margin reaching 100%
@@ -141,17 +144,22 @@ contract AnchoredProviderFactory is AccessControl, Multicall, IAnchoredProviderF
     ///        (the constructor never reads it): a feed with no data halts provider reads until its
     ///        first update lands — feed classes/envelopes are keyed on feedId independently of the
     ///        oracle.
-    /// @param mutableParams false → fully immutable variant (source swap only); true → the curator
-    ///        may tune confidenceParam through this factory. The band params are envelope-validated and
-    ///        immutable either way (the knobs never quote TIGHTER than the band — confidence is clipped to
-    ///        it, marginStep may only widen beyond it), so mutability is a free curator choice.
+    /// @param mutableParams false → immutable variant: only the source can be swapped. true → the owner
+    ///        or an updater may also tune, through this factory and behind 60-second cooldowns,
+    ///        confidenceParam, the per-leg staleness limits (each <= maxRefStaleness) and the per-leg
+    ///        spread multipliers (each <= maxSpreadMult, and possibly below 1×, which tightens the band
+    ///        itself). Fixed either way: the oracle and feeds, the envelope-validated ceilings minMargin,
+    ///        maxRefStaleness and maxSpreadMult, and marginStep. The clamp keeps the final quote no tighter
+    ///        than the band as currently configured, so on a mutable provider the band can move inward:
+    ///        mutability is a pricing choice, not a free one.
     /// @param marginStep fixed shaping bias for the customizable variant, applied to the step factors at
     ///        construction. NOT envelope-bound: regardless of its sign, the provider's load-bearing band
     ///        clamp keeps the final quote no tighter than the audited band, so it cannot breach the
     ///        audit-once guarantee. (Construction still reverts if |marginStep| >= BPS_BASE.)
     /// @param quoteFeedId optional second feed for synthetic ratio quoting (zero = single-feed). The
-    ///        envelope is keyed on `baseFeedId` (the provider's class); the ref feed only contributes its
-    ///        uncertainty and is not validated for existence at construction (reads halt until it has data).
+    ///        envelope is keyed on `baseFeedId` (the provider's class); the quote feed contributes its mid,
+    ///        as the ratio's denominator, and its uncertainty, and is not validated for existence at
+    ///        construction (reads halt until it has data).
     function createAnchoredProvider(
         address oracle,
         bytes32 baseFeedId,
@@ -221,7 +229,7 @@ contract AnchoredProviderFactory is AccessControl, Multicall, IAnchoredProviderF
 
     // ── Curator controls ──────────────────────────────────────────────
 
-    /// @notice Swap a provider's source (zero → reference mode). The curator's only knob — instant,
+    /// @notice Swap a provider's source (zero → reference mode). The only knob on an immutable provider — instant,
     ///         no timelock. The clamp bounds a source INWARD only (never tighter than the live band);
     ///         nothing bounds how far outward it may quote, so this is not a bounded action — vetting
     ///         the source is the operator's due diligence. See IAnchorSource.
@@ -265,7 +273,9 @@ contract AnchoredProviderFactory is AccessControl, Multicall, IAnchoredProviderF
 
     // ── Batch knob setters (customizable providers; owner or updater) ──
     // Atomic: an immutable provider anywhere in the batch reverts the whole call with
-    // ImmutableProvider (as does any out-of-bounds value or an active confidence cooldown).
+    // ImmutableProvider; an out-of-bounds value or an active cooldown reverts it too, with its own
+    // error (ConfidenceParamOutOfBounds, StalenessOutOfBounds, SpreadMultOutOfBounds,
+    // CooldownNotElapsed).
 
     function setConfidence(address[] calldata providers, uint256[] calldata values) external override {
         uint256 l = providers.length;
@@ -312,7 +322,7 @@ contract AnchoredProviderFactory is AccessControl, Multicall, IAnchoredProviderF
 
     /// @notice Provenance predicate: this provider was deployed by this factory with parameters that
     ///         were inside their class envelope AT DEPLOY TIME. Deliberately narrower than "safe to
-    ///         list": the envelope covers 4 of the constructor's inputs, and live per-leg spread
+    ///         list": the envelope bounds 3 of the constructor's inputs, and live per-leg spread
     ///         multipliers may still be tightened below 1× by the provider owner or a delegated
     ///         updater, and the source-mode clamp bounds only tightness — a source can quote
     ///         arbitrarily far outward and is the operator's to vet. Treat a `true` here as "worth
@@ -333,7 +343,8 @@ contract AnchoredProviderFactory is AccessControl, Multicall, IAnchoredProviderF
         return _providersByCreator[creator].length();
     }
 
-    /// @notice Paginated provider list filtered by creator.
+    /// @notice Paginated provider list filtered by current owner (the creator until ownership is
+    ///         transferred; the argument keeps its ABI name).
     function getProviders(address creator, uint256 offset, uint256 limit)
         external
         view

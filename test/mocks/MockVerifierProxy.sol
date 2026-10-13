@@ -34,7 +34,7 @@ contract MockVerifierProxy is IVerifierProxy {
         return payload;
     }
 
-    /// @notice v0.5.1 gasless path: echoes the payload, takes no fee.
+    /// @notice v0.5.1 fee-free path: echoes the payload, takes no fee.
     function verifyView(bytes calldata payload) external pure override returns (bytes memory) {
         return payload;
     }

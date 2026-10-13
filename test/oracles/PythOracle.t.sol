@@ -26,7 +26,7 @@ contract PythOracleTest is Test {
     address trustedSigner;
     PythLazer pythLazer;
 
-    // Attributed-read harness: public getters are disabled, reads go via price(feedId, factory).
+    // Attributed-read harness: public getters are disabled, reads go via price(feedId, pool).
     MockPoolFactory factory;
     address pool;
 

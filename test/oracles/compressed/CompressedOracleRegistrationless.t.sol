@@ -99,7 +99,8 @@ contract CompressedOracleRegistrationlessTest is Test {
 
     /*
      * d. push into a never-"created" slot, then price() returns the data with no registration.
-     *    A never-pushed feedId reads ts=0/price=0.
+     *    A feedId in a never-written slot reads ts=0/price=0; an unwritten position in a written
+     *    slot reads price 0 with the slot's timestamp (asserted below).
      */
     function testZeroSetupPushThenPrice() public {
         address creator = address(0xABCD);

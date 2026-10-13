@@ -15,7 +15,7 @@ import {MockPoolFactory} from "./mocks/MockPoolFactory.sol";
 import {MockVerifierProxy} from "./mocks/MockVerifierProxy.sol";
 import {LazerTestPayload} from "./utils/LazerTestPayload.sol";
 
-/// @notice Regression for the single-feed ask undercoverage present at commit 5354fc5. A $0.000001009
+/// @notice Regression for a single-feed ask that undercovered the upstream interval. A $0.000001009
 /// price at 1% confidence stores mid = 100 (floored from 100.9) with a 1% spread; the old
 /// `max(mid·(1+u+m), mid+1)` ask (101.01e-8) fell below the upstream upper edge 100.9·1.01 = 101.909e-8.
 /// The ask must compound the E8 quantum with the uncertainty: (mid+1)·(1+u+m) = 102.0201e-8.

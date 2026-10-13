@@ -48,7 +48,7 @@ contract OracleBase is AccessControl, Multicall, IOffchainOracle {
 
     error NotImplemented();
     /// @notice Public price getters are disabled: on-chain consumption must go through the
-    ///         access-gated attributed path `price(feedId, factory)` (pools) or `integratorPrice`
+    ///         access-gated attributed path `price(feedId, pool)` (pools) or `integratorPrice`
     ///         (whitelisted integrators). Off-chain consumers read raw storage / events.
     error ReadDisabled();
 
@@ -143,17 +143,19 @@ contract OracleBase is AccessControl, Multicall, IOffchainOracle {
      *
      */
 
-    /// @dev DISABLED. Reading is only allowed via the attributed path price(feedId, factory).
+    /// @dev DISABLED. Reading is only allowed via the attributed paths price(feedId, pool) and
+    ///      integratorPrice(feedId).
     function getOracleDataBulk(bytes32[] calldata) external view override returns (OracleData[] memory) {
         revert ReadDisabled();
     }
 
-    /// @dev DISABLED. Reading is only allowed via the attributed path price(feedId, factory).
+    /// @dev DISABLED. Reading is only allowed via the attributed paths price(feedId, pool) and
+    ///      integratorPrice(feedId).
     function getOracleData(bytes32) public view virtual override returns (OracleData memory) {
         revert ReadDisabled();
     }
 
-    /// @dev Raw oracle data for the gated on-chain read paths only (price(feedId, factory),
+    /// @dev Raw oracle data for the gated on-chain read paths only (price(feedId, pool),
     ///      integratorPrice). The public getters are disabled, so this is the single internal source.
     function _oracleDataRaw(bytes32 feedId) internal view virtual returns (OracleData memory) {
         return oracleData[feedId];
@@ -209,7 +211,7 @@ contract OracleBase is AccessControl, Multicall, IOffchainOracle {
     }
 
     /// @notice Permissionless paid registration: whitelist `pool` for `feedId` (required to use the
-    ///         on-chain price(feedId, factory) path). `factory` must be approved and recognize `pool`
+    ///         on-chain price(feedId, pool) path). `factory` must be approved and recognize `pool`
     ///         via isPool. Paying also clears any blacklist on the pool.
     /// @dev    Overpayment is NOT refunded: any msg.value above registrationFee is kept and is
     ///         withdrawable by ADMIN via withdrawEth. This is intentional.

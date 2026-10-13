@@ -15,14 +15,14 @@ import {IVerifierProxy, ReportV3, ReportV4, ReportHFS} from "../../interfaces/ID
 ///         PriceProvider consumes Chainlink feeds unchanged.
 ///         Registrationless: any feed id from a DON-VERIFIED report is stored — the
 ///         VerifierProxy signature check is the trust anchor, not a registry.
-/// @dev    Reads (`price(feedId, factory)` / `integratorPrice`) and the read-access layer come
+/// @dev    Reads (`price(feedId, pool)` / `integratorPrice`) and the read-access layer come
 ///         entirely from OracleBase; this contract only adds Data Streams ingestion.
 ///
 ///         Multi-version routing: Chainlink ships several VerifierProxy versions (v0.5.0, v0.5.1)
 ///         that may be deployed side by side on one chain, serving different DONs/feeds. Every
 ///         ingested payload is prefixed off-chain with a one-byte version tag; the oracle strips it
 ///         and forwards the rest to the VerifierProxy registered under that tag. A verifier flagged
-///         `supportsView` (v0.5.1) is verified via the gasless `verifyView`; otherwise via the
+///         `supportsView` (v0.5.1) is verified via the fee-free `verifyView`; otherwise via the
 ///         payable `verify`. See `verifierByTag` and `TAG_V050` / `TAG_V051`.
 contract ChainlinkOracle is OracleBase {
     using SafeCast for uint256;
@@ -41,14 +41,13 @@ contract ChainlinkOracle is OracleBase {
     ///
     ///      Consequences, so nobody "fixes" this by raising the constant:
     ///      - ingestion is NOT payable and there is no LINK `approve` path anywhere in `contracts/`,
-    ///        so a nonzero effective fee cannot be paid — pushes would revert permanently and the
-    ///        only remedy is a redeploy (this is a `constant`, and `feeToken` is `immutable`);
+    ///        so a nonzero effective fee cannot be paid — pushes through that route would revert
+    ///        permanently; the remedies are rerouting the tag with `setVerifier` to a fee-free
+    ///        `verifyView` proxy, where one serves that feed on that chain, or a redeploy (this is a
+    ///        `constant`, and `feeToken` is `immutable`);
     ///      - `verify` is called BEFORE `_store`'s monotonic gate, so a nonzero fee would also make
     ///        the oracle pay for reports it then discards: anyone could replay an already-consumed
     ///        report, burn the fee and write nothing, draining the balance one verification at a time.
-    /// @custom:internal Confirmed with Chainlink for this deployment.
-    ///      If a chain ever requires on-chain payment, the fee-free v0.5.1 `verifyView` route is the
-    ///      intended escape hatch — register that proxy under `TAG_V051` (see `verifierByTag`).
     uint256 internal constant VERIFICATION_FEE = 0 wei;
 
     /// @dev Data Streams prices are 18-decimal; OracleData is 8-decimal (`decimals`). 1e18 / 1e8.
@@ -79,10 +78,10 @@ contract ChainlinkOracle is OracleBase {
     ///         arbitrary — ADMIN may register any tag byte → any proxy — but these are the
     ///         canonical defaults for the two supported Chainlink VerifierProxy versions.
     uint8 public constant TAG_V050 = 0x50; // v0.5.0 — payable `verify` only
-    uint8 public constant TAG_V051 = 0x51; // v0.5.1 — gasless `verifyView` available
+    uint8 public constant TAG_V051 = 0x51; // v0.5.1 — fee-free `verifyView` available
 
     /// @dev A registered VerifierProxy and how to call it. `supportsView == true` selects the
-    ///      gasless `verifyView` path (v0.5.1); otherwise the payable `verify` path (v0.5.0).
+    ///      fee-free `verifyView` path (v0.5.1); otherwise the payable `verify` path (v0.5.0).
     struct Verifier {
         IVerifierProxy proxy;
         bool supportsView;
@@ -137,12 +136,13 @@ contract ChainlinkOracle is OracleBase {
     ///         a single ADMIN key can point a tag at a contract that echoes back
     ///         whatever it is handed, after which any unprivileged caller can store arbitrary prices
     ///         for every pool on every feed of this oracle; `removeVerifier` likewise bricks a whole
-    ///         lane in one transaction. There is no timelock and no two-step handoff anywhere in
-    ///         this repo, so the multisig IS the control — it is an operational invariant, not
+    ///         lane in one transaction. There is no timelock and no two-step handoff on the
+    ///         verifier routes, so the multisig IS the control — it is an operational invariant, not
     ///         something the code enforces (accepted deliberately). `supportsView` is likewise an
-    ///         unverified assertion: nothing probes the target for `verifyView`. A wrong value fails
-    ///         closed (the call reverts and that tag stops ingesting), but only at push time, not
-    ///         here.
+    ///         unverified assertion: nothing probes the target for `verifyView`. It only selects the
+    ///         method: `true` on a proxy without `verifyView` fails closed at push time (the call
+    ///         reverts and that tag stops ingesting), while `false` on a proxy that has both simply
+    ///         routes through the payable `verify`.
     function setVerifier(uint8 tag, address proxy, bool supportsView) external onlyRole(ADMIN_ROLE) {
         _setVerifier(tag, proxy, supportsView);
     }
@@ -189,8 +189,8 @@ contract ChainlinkOracle is OracleBase {
     /// @dev Routes a tagged payload to the right VerifierProxy version and returns the verified
     ///      report blob. The first byte is the version tag (set off-chain); the remainder is the
     ///      original DON full report forwarded to the proxy. v0.5.1 verifiers (`supportsView`) use
-    ///      the gasless `verifyView`; v0.5.0 use the payable `verify`, paying a fixed fee from the
-    ///      contract balance. Virtual: a future stream family can override.
+    ///      the fee-free `verifyView`; v0.5.0 use the payable `verify`, forwarding the fixed
+    ///      VERIFICATION_FEE (zero; see above) from the contract balance. Virtual: a future stream family can override.
     function _verifyReport(bytes calldata taggedReport) internal virtual returns (bytes memory reportData) {
         require(taggedReport.length >= 1, EmptyPayload());
         uint8 tag = uint8(taggedReport[0]);
@@ -199,7 +199,7 @@ contract ChainlinkOracle is OracleBase {
 
         bytes calldata report = taggedReport[1:];
         if (v.supportsView) {
-            // v0.5.1: gasless, fee-free view verification (allowed from this non-view context).
+            // v0.5.1: fee-free view verification (allowed from this non-view context; it still costs gas).
             return v.proxy.verifyView(report);
         }
         return v.proxy.verify{value: VERIFICATION_FEE}(report, abi.encode(feeToken));

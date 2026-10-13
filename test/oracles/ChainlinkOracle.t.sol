@@ -34,7 +34,7 @@ contract ChainlinkOracleTest is Test {
 
     ChainlinkOracle private oracle;
     MockVerifierProxy private verifier; // v0.5.0-style: payable verify
-    MockVerifierProxy private verifierView; // v0.5.1-style: gasless verifyView
+    MockVerifierProxy private verifierView; // v0.5.1-style: fee-free verifyView
     MockPoolFactory private factory;
     address private pool;
     uint16 private spreadCase;
@@ -377,8 +377,8 @@ contract ChainlinkOracleTest is Test {
 
     /// @notice `VERIFICATION_FEE` is zero and the whole Chainlink lane depends on it staying zero —
     ///         ingestion is not payable, `feeToken` is immutable, and there is no LINK approve path
-    ///         anywhere, so a nonzero effective fee is unpayable and would brick the lane until
-    ///         redeploy.
+    ///         anywhere, so a nonzero effective fee is unpayable and would brick that route until the
+    ///         tag is rerouted to a fee-free verifier serving that feed, or the oracle is redeployed.
     ///
     ///         Pin the ZERO, not a tautology. Asserting
     ///         `balBefore - balance == verifier.received()` would hold for ANY fee value — the mock
@@ -416,7 +416,7 @@ contract ChainlinkOracleTest is Test {
         assertEq(mid, MID8, "verifyView path still ingests");
     }
 
-    // ── v0.5.1 gasless verifyView routing ───────────────────────────────
+    // ── v0.5.1 fee-free verifyView routing ───────────────────────────────
 
     /// @notice A report tagged for the v0.5.1 proxy is verified through `verifyView`: it stores and
     ///         reads back identically to the payable path, and takes no fee from either verifier.

@@ -3,11 +3,10 @@
 # Thin wrapper over script/CreatePriceProvider.s.sol — the params come from env vars (see that
 # script's header). Creation is unconditionally permissionless (no admin allow-list/envelope, unlike
 # AnchoredProviderFactory): the caller (PRIVATE_KEY) becomes the provider owner regardless of the
-# oracle/feed/params chosen. PriceProviderFactory is deployed on ethereum only — see
-# ../DEPLOYMENTS.md.
+# oracle/feed/params chosen. Chain availability is in ../DEPLOYMENTS.md.
 #
 #   # dry-run (simulate, nothing sent):
-#   NETWORK=ethereum FEED_ID=397 \
+#   NETWORK=ethereum REFERENCE=pyth FEED_ID=397 \
 #     BASE_TOKEN=0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf \
 #     QUOTE_TOKEN=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
 #     MARGIN_STEP=0 MAX_TIME_DELTA=60 \

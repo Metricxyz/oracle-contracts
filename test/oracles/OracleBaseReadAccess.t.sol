@@ -163,7 +163,7 @@ contract OracleBaseReadAccessTest is Test {
         assertTrue(oracle.registeredPool(FEED, pool));
     }
 
-    // ─── price(feedId, factory) ───────────────────────────────────────
+    // ─── price(feedId, pool) ───────────────────────────────────────
 
     function test_priceWithPool_success_emits() public {
         address pool = makeAddr("pool");
@@ -471,7 +471,7 @@ contract OracleBaseReadAccessTest is Test {
 
     // ─── additional coverage ───────────────────────────────────────────
 
-    /// Real pushed price flows through price(feedId,factory) and integratorPrice unchanged.
+    /// Real pushed price flows through price(feedId,pool) and integratorPrice unchanged.
     function test_priceWithFactory_realData_parity() public {
         address pool = makeAddr("pool");
         address pp = makeAddr("priceProvider");

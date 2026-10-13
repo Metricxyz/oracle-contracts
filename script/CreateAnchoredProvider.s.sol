@@ -11,13 +11,13 @@ import {IAnchoredProviderFactory} from "../contracts/interfaces/IAnchoredProvide
 ///         envelope for the base feed's class; the caller becomes the provider owner. The base feed
 ///         does not need data yet: creation succeeds without reading the oracle, and the provider
 ///         reads revert (`FeedNotFound` from the reference oracle) until the feed's first update lands — see
-///         docs/anchored-price-provider-quickstart.md Step 1.
+///         docs/anchored-price-provider-quickstart.md Step 2.
 ///
 /// ENV (required):
 ///   PRIVATE_KEY       – creator key; becomes the provider owner
 ///   NETWORK           – key into script/config/networks.json (ethereum | base | …)
 ///   BASE_FEED_ID      – base feed id (decimal Pyth Lazer id or 0x-hex; stored as bytes32)
-///   BASE_TOKEN        – base token address (mandatory — the oracles are token-free)
+///   BASE_TOKEN        – base token address (mandatory — providers never read a token from the oracle)
 ///   QUOTE_TOKEN       – quote token address (mandatory; must differ from BASE_TOKEN)
 ///   MIN_MARGIN        – per-side floor, BPS_BASE_U scale (1 bps = 1e14); must sit in the envelope
 ///   MAX_REF_STALENESS – seconds; must sit in the envelope
@@ -34,7 +34,8 @@ import {IAnchoredProviderFactory} from "../contracts/interfaces/IAnchoredProvide
 ///   MARGIN_STEP       – shaping bias for the mutable variant, int256, |x| < 1e18 (default 0)
 ///
 /// ENV (optional, initial config applied AT CONSTRUCTION — same validation as the setters; for the
-/// immutable variant these are permanent, for the customizable variant they are the starting point):
+/// immutable variant these are permanent except SOURCE, which the owner can replace on either
+/// variant; for the customizable variant they are the starting point):
 ///   SOURCE            – custom quote source (default 0 = reference mode)
 ///   BASE_MAX_STALENESS / QUOTE_MAX_STALENESS – per-leg reference staleness, seconds
 ///                       (default MAX_REF_STALENESS; each must be <= MAX_REF_STALENESS)
@@ -122,6 +123,6 @@ contract CreateAnchoredProvider is NetworkConfig {
         console.log("Anchored Price Provider created at:", provider);
         console.log("  owner:", vm.addr(creatorKey));
         console.log("  isProvider() =", apf.isProvider(provider));
-        console.log("  (public-pool eligibility check: factory.isProvider(provider) == true)");
+        console.log("  (provenance check: factory.isProvider(provider) == true; not a liveness or pool-tier check)");
     }
 }

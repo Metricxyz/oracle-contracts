@@ -11,7 +11,7 @@ import {MockPoolFactory} from "../mocks/MockPoolFactory.sol";
 import {IPool} from "../../contracts/interfaces/IPoolFactory.sol";
 
 /// @notice Version-tag routing: a one-byte tag prefixes every payload and selects which
-///         VerifierProxy (and which verify path — payable `verify` vs gasless `verifyView`)
+///         VerifierProxy (and which verify path — payable `verify` vs fee-free `verifyView`)
 ///         the report is forwarded to. Covers the registry admin surface, per-tag routing,
 ///         and mixed-version batches.
 contract ChainlinkOracleRoutingTest is Test {
@@ -26,7 +26,7 @@ contract ChainlinkOracleRoutingTest is Test {
 
     ChainlinkOracle private oracle;
     MockVerifierProxy private v050; // payable verify
-    MockVerifierProxy private v051; // gasless verifyView
+    MockVerifierProxy private v051; // fee-free verifyView
     MockPoolFactory private factory;
     address private pool;
     address private stranger = makeAddr("stranger");

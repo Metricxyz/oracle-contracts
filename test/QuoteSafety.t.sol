@@ -9,7 +9,8 @@ import {TestOracle} from "./utils/TestOracle.sol";
 import {MockPoolFactory} from "./mocks/MockPoolFactory.sol";
 import {MockAnchorSource} from "./mocks/MockAnchorSource.sol";
 
-/// @notice Independent containment and failure-boundary checks for AUD-02 and AUD-04.
+/// @notice Independent containment and failure-boundary checks: a quote must bracket the exact
+///         upstream interval, and an input that cannot be covered must halt rather than quote.
 contract QuoteSafetyTest is Test {
     uint256 private constant Q64 = 1 << 64;
     uint256 private constant MARGIN = 5e13;

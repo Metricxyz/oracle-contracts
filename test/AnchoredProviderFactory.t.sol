@@ -253,12 +253,13 @@ contract AnchoredProviderFactoryTest is Test {
     }
 
     // ── Envelope must stay inside the provider's hard bounds ──────────────
-    // (so every in-envelope param is constructor-valid; create() can only ParamsOutOfEnvelope).
+    // (so every in-envelope value of the bounded params is constructor-valid; for those, create()
+    // fails with ParamsOutOfEnvelope rather than a provider revert).
 
     /// @notice An envelope admitting `minMargin == 0` must be rejected HERE, not at create(). The
-    ///         factory's contract with its admins is that everything inside a stored envelope is
-    ///         constructor-valid, so `create()` can only ever fail with `ParamsOutOfEnvelope` rather
-    ///         than a confusing provider-level revert. The provider rejects `minMargin == 0`
+    ///         factory's contract with its admins is that every in-envelope value of the bounded
+    ///         parameters is constructor-valid, so for those `create()` fails with `ParamsOutOfEnvelope`
+    ///         rather than a confusing provider-level revert. The provider rejects `minMargin == 0`
     ///         (`MinMarginZero`), so an envelope with `minMarginMin = 0` would advertise a floor
     ///         value that always reverts at creation.
     function testSetEnvelopeRejectsMinMarginZero() public {
@@ -274,7 +275,7 @@ contract AnchoredProviderFactoryTest is Test {
         factory.setEnvelope(keccak256("X"), env);
         (,, uint256 stalenessMin,,, bool exists) = factory.envelopes(keccak256("X"));
         assertTrue(exists);
-        assertEq(stalenessMin, 0, "stalenessMin 0 allowed (same-block updates)");
+        assertEq(stalenessMin, 0, "stalenessMin 0 allowed (refTime == block.timestamp)");
     }
 
     function testSetEnvelopeRejectsStalenessAboveHardMax() public {
@@ -383,7 +384,7 @@ contract AnchoredProviderFactoryTest is Test {
     }
 
     function testCreateWithZeroStalenessSucceeds() public {
-        // stalenessMin 0 in the envelope -> a creator may pick maxRefStaleness 0 (same-block reference).
+        // stalenessMin 0 in the envelope -> a creator may pick maxRefStaleness 0 (refTime == block.timestamp).
         IAnchoredProviderFactory.Envelope memory env = _majorsEnvelope();
         env.stalenessMin = 0;
         factory.setEnvelope(MAJORS, env);

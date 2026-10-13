@@ -19,8 +19,10 @@ import {ICompressedOracleV1} from "../../interfaces/ICompressedOracleV1.sol";
 ///
 ///         A creator owns 256 slots × 4 positions in their own namespace and simply
 ///         pushes into them (directly, or through pushers delegated via `allowPushers`).
-///         A never-pushed position reads as price 0 / timestamp 0, which every consumer
-///         already rejects as stale — no seeding or creation step is needed.
+///         A never-pushed slot reads as price 0 / timestamp 0, which every consumer
+///         already rejects; a never-pushed position in a written slot reads price 0 with
+///         the slot's timestamp, and its zero price halts consumers. No seeding or creation
+///         step is needed.
 contract CompressedOracleV1 is OracleBase, ICompressedOracleV1 {
     /// @notice Oracle family discriminator for off-chain introspection (matches the
     ///         pusher/console `kind` vocabulary).
@@ -115,8 +117,9 @@ contract CompressedOracleV1 is OracleBase, ICompressedOracleV1 {
 
         if (compressed.s1 == 0xff && compressed.s0 == 0xff) {
             // Reserved 0xff/0xff codebook combo = stalled marker → emit the stall sentinel (65535) so
-            // the provider halts. This pair is the ONLY way a compressed feed can halt a provider:
-            // a genuine wide spread saturates at Codebook256.MAX_VALUE = 10_000, which in 0.01-bps
+            // the provider halts. This pair is the only EXPLICIT stall marker (stale, zero or guard-
+            // breaching data, and an extreme confidenceParam, halt providers too): a genuine wide spread
+            // saturates at Codebook256.MAX_VALUE = 10_000, which in 0.01-bps
             // units is 1% — well below the plain PriceProvider's 5% circuit breaker, so a compressed
             // feed can never trip that breaker no matter how wide the real market gets.
             data.spread1 = STALL_SPREAD;
@@ -256,8 +259,9 @@ contract CompressedOracleV1 is OracleBase, ICompressedOracleV1 {
     ///         mechanism exists to let a SINGLE feed creator unblock its own stuck nonce — it is not
     ///         a way to share one pusher contract between creators, and nothing here prevents that
     ///         misuse. If two creators both authorize the same pusher contract, the second silently
-    ///         takes the namespace, and the first cannot take it back: `removePushers` reverts once
-    ///         the slot belongs to someone else. A word pushed after the takeover lands in the wrong
+    ///         takes the namespace. The first cannot remove it with `removePushers`, which reverts once the
+    ///         slot belongs to someone else, but can re-claim it by authorising again while the pusher
+    ///         still answers `isPusher` for it — so the two creators can take it back and forth. A word pushed after the takeover lands in the wrong
     ///         creator's namespace and reads back as fresh, valid data — it is not caught by the
     ///         stale-data fail-close. Do not share pusher contracts.
     function allowContractPushers(address[] calldata pushers) external {
@@ -353,8 +357,9 @@ contract CompressedOracleV1 is OracleBase, ICompressedOracleV1 {
     ///         [data0:6][data1:6][data2:6][data3:6][ts:7][slotId:1]
     ///         The sender pushes into `namespaceRemapping[msg.sender]`, falling back to
     ///         its OWN namespace — a creator needs zero setup transactions to start
-    ///         pushing. Each word carries its own timestamp (monotonicity is the only
-    ///         freshness gate), so there is no deadline prefix.
+    ///         pushing. Each word carries its own timestamp, gated by monotonicity and by
+    ///         a future-drift check on whole seconds (floor(timestampMs / 1000) <= block.timestamp +
+    ///         MAX_TIME_DRIFT), so there is no deadline prefix.
     fallback() external override {
         uint256 end;
         uint256 namespace;

@@ -6,7 +6,7 @@ pragma solidity ^0.8.28;
 ///         reference band, so source code is never reviewed.
 ///
 ///         READ THIS BEFORE WRITING A SOURCE. The clamp is ONE-DIRECTIONAL: it bounds only how TIGHT
-///         your quote may be (never inside the anchor's own uncertainty) and places NO bound on how
+///         your quote may be (never inside the configured reference band: per-leg multipliers applied, plus minMargin) and places NO bound on how
 ///         WIDE it may be. A quote far outside the reference band is passed through unchanged, so the
 ///         band does not make an arbitrary source safe.
 ///

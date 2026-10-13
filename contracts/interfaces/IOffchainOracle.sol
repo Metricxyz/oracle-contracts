@@ -43,7 +43,9 @@ interface IOffchainOracle {
     event StateGuardDeleted(bytes32 indexed feedId);
 
     /// @notice Emitted once per feed whose stored price is ACTUALLY advanced by an accepted update. A
-    ///         monotonic-rejected (older-or-equal) push writes nothing and emits nothing. This is the
+    ///         monotonic-rejected (older-or-equal) push writes nothing and emits nothing. Compressed
+    ///         exception: a slot write also stores never-set and 0xff/0xff stall positions but emits no
+    ///         event for them, including a stall that deactivates a previously live feed. This is the
     ///         quote-side key of the off-chain builder's (oracle, feed) join: FeedUpdated(feedId)
     ///         sequences the maker update ahead of a matching PriceRead(pool, feedId) on the same
     ///         oracle. Only feedId is load-bearing for the join, so the event carries nothing else —

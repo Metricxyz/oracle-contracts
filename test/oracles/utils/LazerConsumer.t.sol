@@ -468,8 +468,8 @@ contract LazerConsumerTest is Test {
         assertEq(d.spread0, 100, "1 bp real spread => 100 in 0.01-bps units");
     }
 
-    /// @notice A very wide confidence saturates just BELOW the stall sentinel (never equal to it), so
-    ///         it reads as a wide-but-live band rather than stalled. conf/price = 4e8 / 2e9 = 20%,
+    /// @notice A very wide confidence saturates just BELOW the stall sentinel (never equal to it): the raw
+    ///         read is a live saturation ceiling, not a stall, and the standard providers halt on it. conf/price = 4e8 / 2e9 = 20%,
     ///         above the representable ceiling → MAX_REAL_SPREAD (type(uint16).max - 1).
     function test_verifyAndStore_wideConfidenceSaturatesBelowSentinel() public {
         (bytes memory payload, uint32[] memory feedIds) = _buildTwoFeedPayload(
@@ -762,7 +762,7 @@ contract LazerConsumerTest is Test {
         consumer.verifyAndStore(feedIds, ""); // must not revert (no overflow at the boundary)
 
         IOffchainOracle.OracleData memory d = consumer.get(1);
-        assertEq(d.price, 0, "crushed-to-zero price skipped, not stored"); // 2e9 / (1e8 · 10^57) = 0
+        assertEq(d.price, 0, "crushed-to-zero price skipped, not stored"); // floor(2e9 / 10^57) = 0
         assertEq(d.spread0, 0, "nothing written");
         assertEq(TimeMs.unwrap(d.timestampMs), 0, "timestamp not advanced");
     }

@@ -17,7 +17,7 @@ interface ICompressedOracleV1 {
         CompressedOracleData oracle2;
         CompressedOracleData oracle3;
         TimeMs timestampMs; // unix timestamp in milliseconds
-    } // 48*4 + 64 = 248
+    } // 48*4 + 56 = 248 (8 bits reserved)
 
     error InvalidPosition(uint8 index);
     error CodebookDecodeFailed(uint8 index);

@@ -157,7 +157,8 @@ contract PriceProviderFactory is AccessControl, Multicall, IPriceProviderFactory
         return _providersByCreator[creator].length();
     }
 
-    /// @notice Paginated provider list filtered by creator.
+    /// @notice Paginated provider list filtered by current owner (the creator until ownership is
+    ///         transferred; the argument keeps its ABI name).
     function getProviders(address creator, uint256 offset, uint256 limit)
         external
         view

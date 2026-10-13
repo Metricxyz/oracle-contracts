@@ -9,7 +9,8 @@ interface IAnchoredProviderFactory {
     /// @notice Initial provider config applied AT CONSTRUCTION through the same validation the
     ///         post-deploy setters use (source swap + per-leg staleness + per-leg multipliers), so a
     ///         provider can be born fully configured in one tx. For the immutable variant these become
-    ///         the permanent values (no setters); for the customizable variant they are the starting
+    ///         the permanent values (no setters) except `source`, which the owner can replace on either
+    ///         variant; for the customizable variant they are the starting
     ///         point. Bounds: each staleness <= maxRefStaleness, each multiplier <= maxSpreadMult.
     struct InitialConfig {
         address source; // custom quote source (0 = reference mode)

@@ -143,7 +143,7 @@ contract CompressedOracleContractPushersTest is Test {
     }
 
     function testAllowContractPusherRevertsOnEOA() public {
-        // EOA has no code, so staticcall to isPusher will fail
+        // EOA has no code: the staticcall succeeds with empty data, and decoding it as bool reverts
         address eoa = address(0xDEAD);
 
         vm.prank(creator);

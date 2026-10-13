@@ -3,7 +3,7 @@
 # Thin wrapper over script/CreateAnchoredProvider.s.sol — the params come from env vars (see that
 # script's header). The base feed does not need data yet: creation succeeds without reading the
 # oracle, and reads revert (FeedNotFound from the reference oracle) until the feed's first update lands —
-# see Step 1 of docs/anchored-price-provider-quickstart.md. The caller (PRIVATE_KEY) becomes the provider
+# see Step 2 of docs/anchored-price-provider-quickstart.md. The caller (PRIVATE_KEY) becomes the provider
 # owner; the params must sit inside the factory's envelope for the feed's class.
 #
 #   # dry-run (simulate, nothing sent):

@@ -9,7 +9,7 @@ pragma solidity ^0.8.28;
 ///         the real on-chain VerifierProxy of either version.
 ///
 ///         `verify` is present in both v0.5.0 and v0.5.1 (payable, state-changing, pays the fee
-///         via the FeeManager). `verifyView` was added in v0.5.1: a gasless, fee-free `view`
+///         via the FeeManager). `verifyView` was added in v0.5.1: a fee-free `view`
 ///         verification — calling it on a v0.5.0 proxy reverts (the function does not exist).
 ///         ChainlinkOracle picks the path per registered verifier (see `supportsView`).
 interface IVerifierProxy {

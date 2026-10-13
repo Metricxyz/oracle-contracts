@@ -57,7 +57,7 @@ contract AnchoredPriceProviderTest is Test {
     address private constant BASE_TOKEN = address(0xBEEF);
     address private constant QUOTE_TOKEN = address(0xCAFE);
 
-    // Majors-class parameters (floor 0.5 bps/side, uMax 150 bps).
+    // Majors-class parameters (floor 0.5 bps/side, uMax 150 spread units = 1.5 bps).
     uint256 private constant FLOOR = 5e13;
     uint256 private constant MAX_REF_STALENESS = 60;
     uint16 private constant U_MAX = 150;
@@ -249,7 +249,7 @@ contract AnchoredPriceProviderTest is Test {
 
     function testConstructorStalenessZeroAllowed() public {
         AnchoredPriceProvider p = _deployProvider(FLOOR, 0, BASE_TOKEN, QUOTE_TOKEN);
-        assertEq(p.MAX_REF_STALENESS(), 0, "staleness 0 allowed = reference must be in the current block");
+        assertEq(p.MAX_REF_STALENESS(), 0, "staleness 0 allowed = refTime must equal block.timestamp");
     }
 
     function testConstructorStalenessTooLargeReverts() public {
@@ -260,7 +260,7 @@ contract AnchoredPriceProviderTest is Test {
     /// @notice minMargin must be strictly positive. The refBid >= refAsk halt is not a sufficient
     ///         safety net on its own —
     ///         that halt only fires on an EXACTLY collapsed band, so minMargin 0 with a spread of 1
-    ///         unit yields a ~0.0001%-wide band that passes every guard while the provider still
+    ///         unit yields a ~0.0001%-per-side band that passes every guard while the provider still
     ///         advertises the audited "never tighter than the band" floor.
     function testConstructorMinMarginZeroRejected() public {
         vm.expectRevert(AnchoredPriceProvider.MinMarginZero.selector);
@@ -326,7 +326,7 @@ contract AnchoredPriceProviderTest is Test {
     ///         $0.000001009 at 1% confidence stores mid = 100 (floored from 100.9) with u = 1%; the
     ///         honest ask is 100.9·1.01 = 101.909e-8. The max form gave 100·1.01005 = 101.005e-8 — below
     ///         it, so LPs sold the base under the oracle's own upper bound. Compounding gives
-    ///         101·1.01005 = 102.015e-8 >= 101.909e-8.
+    ///         101·1.01005 = 102.01505e-8 >= 101.909e-8.
     function testAskCoversUpstreamUpperEdgeOnCheapFeedWithUncertainty() public {
         uint64 mid = 100; // floor(100.9)
         uint16 u = ORACLE_BPS; // 10_000 × 0.01 bps = 1%
@@ -386,7 +386,7 @@ contract AnchoredPriceProviderTest is Test {
 
     function testSetSourceZeroRestoresReferenceMode() public {
         oracle.setData(FEED_ID, 185_000_000, 2, 0, block.timestamp);
-        src.set(1, 2); // degenerate source: would halt if consulted... (1 < 2, in Q64 ≈ 0) — clamps wide
+        src.set(1, 2); // valid but extreme source (1 < 2, in Q64 ≈ 0): passes validation and clamps wide
         provider.setSource(address(src));
 
         provider.setSource(address(0));
@@ -400,7 +400,7 @@ contract AnchoredPriceProviderTest is Test {
 
     function testReferenceModeQuotesBand() public {
         uint64 mid = 185_000_000; // 1.85, 8-dec
-        uint16 u = 2; // 2 bps reference uncertainty
+        uint16 u = 2; // 0.02 bps reference uncertainty (2 spread units)
         oracle.setData(FEED_ID, mid, u, 0, block.timestamp);
 
         (uint128 bid, uint128 ask,) = _read();
@@ -444,8 +444,8 @@ contract AnchoredPriceProviderTest is Test {
         _expectStalled();
     }
 
-    /// @dev Boundary: refTime exactly MAX_REF_STALENESS old is NOT stale (spec: halt when
-    ///      timestamp > maxRefStaleness), so the pool still quotes.
+    /// @dev Boundary: refTime exactly MAX_REF_STALENESS old is NOT stale (halt when
+    ///      block.timestamp - refTime > maxRefStaleness), so the pool still quotes.
     function testQuotesAtExactStalenessBoundary() public {
         oracle.setData(FEED_ID, 100_000_000, 2, 0, block.timestamp - MAX_REF_STALENESS);
         (uint128 bid, uint128 ask,) = _read();
@@ -597,7 +597,7 @@ contract AnchoredPriceProviderTest is Test {
     }
 
     /// @dev Returndata bomb: must fail closed AND keep the caller-side cost bounded (the hardened
-    ///      assembly read copies only 64 bytes, so a clean fail-closed read and a bombing read cost
+    ///      assembly read copies only 96 bytes, so a clean fail-closed read and a bombing read cost
     ///      the same order of gas — far below ~2× SOURCE_GAS_LIMIT a high-level call would incur).
     function testSourceReturndataBombFailsClosedAndBounded() public {
         oracle.setData(FEED_ID, 185_000_000, 2, 0, block.timestamp);
@@ -878,9 +878,9 @@ contract AnchoredPriceProviderTest is Test {
 
     // ── Shaping + clamp (mutable, reference mode) ─────────────────────────
 
-    /// @dev Confidence alone can never escape the band: max delta = mid·u (confidence ceiling)
-    ///      while the band half-width is u + FLOOR — so a confidence-only shaped quote is always
-    ///      clipped to the band edges (the shaped quote can only ever be tighter than the band).
+    /// @dev At 1× confidence the shaped quote cannot escape the band: its delta is mid·u while the band
+    ///      half-width is u + FLOOR, so a confidence-only quote at this setting is clipped to the band
+    ///      edges. Higher multipliers can widen past the band; see the CONFIDENCE_MAX case below.
     /// @dev A sub-1× confidence (< 10_000) tightens the shaped quote inside the band; the clamp then
     ///      floors it to the band edges — a confidence-narrowed quote is never tighter than the band.
     function testConfidenceBelowBandClippedToBandEdges() public {
@@ -947,8 +947,8 @@ contract AnchoredPriceProviderTest is Test {
         );
     }
 
-    /// @dev A marginStep wider than the band half-width escapes the band: unlike confidence (which only
-    ///      tightens and is clipped), marginStep widens the shaped quote, so the clamp keeps it.
+    /// @dev A marginStep wider than the band half-width escapes the band: the clamp keeps any edge wider
+    ///      than the band, whether a marginStep or a high confidence multiplier made it so.
     function testMarginStepWidensCustomizableQuoteBeyondBand() public {
         int256 ms = int256(BPS_BASE_U / 10); // 10% — far exceeds the u + FLOOR band half-width
         AnchoredPriceProvider p = new AnchoredPriceProvider(
@@ -1112,7 +1112,7 @@ contract AnchoredPriceProviderTest is Test {
         assertGe(ask, refAsk, "composed ask no tighter than band");
     }
 
-    /// @notice Fixed by `e55b466`. The confidence delta must be folded into the single band-edge
+    /// @notice Regression guard. The confidence delta must be folded into the single band-edge
     ///         division, NOT computed as a floored 8-decimal integer first. On a low-priced feed
     ///         `mid · spreadBps · confidence / CONFIDENCE_BASE` truncates to ZERO, so the whole
     ///         configured confidence spread silently vanished — and because a positive marginStep
@@ -1567,7 +1567,7 @@ contract AnchoredPriceProviderKnobsTest is Test {
         oracle.register{value: 1}(FEED1, address(this), address(poolFactory));
         oracle.register{value: 1}(FEED2, address(this), address(poolFactory));
 
-        // Fresh, valid data on both legs (each 3 bps uncertainty).
+        // Fresh, valid data on both legs (each 0.03 bps uncertainty: 3 spread units).
         oracle.setData(FEED1, uint64(65_000 * 1e8), 3, 0, block.timestamp);
         oracle.setData(FEED2, uint64(3_000 * 1e8), 3, 0, block.timestamp);
     }

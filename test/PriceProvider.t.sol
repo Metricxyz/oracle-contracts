@@ -38,7 +38,8 @@ contract PriceProviderTest is Test {
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
-    /// @dev Compute bid from mid + adjustedSpread (same bid math as PriceProvider._getQuote)
+    /// @dev Bid from mid + adjustedSpread with the E8 delta floored first. Production folds the delta into a
+    ///      single Q64 division instead, so this matches it only on inputs where that floor is exact.
     function _bidFrom(uint64 mid, uint256 adjustedSpread) internal pure returns (uint256) {
         uint256 delta = uint256(mid) * adjustedSpread / CONFIDENCE_BASE;
         return delta >= mid ? 0 : uint256(mid) - delta;
@@ -286,7 +287,7 @@ contract PriceProviderTest is Test {
 
     /// @notice On a low-priced feed the confidence-derived fee must NOT be floored away. The old
     ///         `delta = mid * confidence / CONFIDENCE_BASE` collapses to 0 when mid is small (here
-    ///         mid = 299, PEPE-scale, 5 bps confidence: 299*5e6/1e10 = 0.149 -> floor 0), silently
+    ///         mid = 299, PEPE-scale, 5 bps confidence: 299*5e6/1e10 = 0.1495 -> floor 0), silently
     ///         dropping the whole spread and pinning bid == mid. The full-precision quote keeps the fee.
     function testConfidenceFeeSurvivesLowPriceMid() public {
         vm.warp(100);
@@ -481,7 +482,7 @@ contract PriceProviderTest is Test {
     ///         exactly where the cover exists to hold, and the pool would buy token0 out of LP
     ///         inventory above the true price. The factor is therefore floored at 1e18.
     ///
-    ///         Chosen so the quantum matters: mid = 33 (3.3e-7 at 8 decimals) with confidence 0, so
+    ///         Chosen so the quantum matters: mid = 33 (3.3e-7 at 8 decimals) at 1× confidence on a 3 bps spread, so
     ///         nothing but the cover stands between the ask and the truncated mid. `testNegMarginStep…`
     ///         above cannot catch this — it asserts only `bid < ask`, at mid = 1e8 where one quantum
     ///         is negligible.
@@ -542,8 +543,8 @@ contract PriceProviderTest is Test {
         assertEq(refWide, refTight, "reference unchanged");
     }
 
-    /// @notice A nonzero marginStep is a symmetric widening of both edges, so it does not skew the
-    ///         reference off the oracle mid either — the fee each side pays simply grows by the bias.
+    /// @notice A nonzero marginStep shifts the shaped edges — this negative one tightens them — but never
+    ///         moves the reference off the oracle mid, so the reference stays inside the quote.
     function testReferenceWithNegativeMarginStepStaysInQuote() public {
         vm.warp(100);
         PriceProvider negProvider =

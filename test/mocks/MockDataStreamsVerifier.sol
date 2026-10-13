@@ -21,7 +21,7 @@ contract MockDataStreamsVerifier is IVerifierProxy {
         (, reportData) = abi.decode(payload, (bytes32[3], bytes));
     }
 
-    /// @notice v0.5.1 gasless path: extracts the report blob exactly like `verify`, no fee.
+    /// @notice v0.5.1 fee-free path: extracts the report blob exactly like `verify`, no fee.
     function verifyView(bytes calldata payload) external pure override returns (bytes memory reportData) {
         (, reportData) = abi.decode(payload, (bytes32[3], bytes));
     }

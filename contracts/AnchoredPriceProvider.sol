@@ -21,7 +21,8 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///         - Reference mode (source = 0, default): quotes the reference interval directly.
 ///         - Source mode: an arbitrary curator contract supplies bid/ask, clipped into the band.
 ///           The reference bounds how TIGHT it may quote — a source can never quote inside the
-///           oracle's own uncertainty to extract LP value. Widening is NOT bounded: the pool will
+///           configured reference band (per-leg multipliers applied, plus minMargin) to extract LP
+///           value; a sub-1× multiplier can make that band narrower than the oracle's own uncertainty. Widening is NOT bounded: the pool will
 ///           quote arbitrarily far outside the band if the source says so. That is reachable with
 ///           nobody malicious — an honest source reading a venue an outsider can move hands that
 ///           outsider the pool's price. Accepted deliberately: the outward side is the OPERATOR's
@@ -31,8 +32,9 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///         The third output, referencePrice, is the anchor's own mid and is NOT shapeable: no source,
 ///         confidence, marginStep or spread multiplier touches it. Consumers charge their fee from
 ///         that value out to whichever edge executes, so widening a quote only worsens the widener's
-///         own execution — it cannot inflate the fee base. That is what keeps an instant source swap
-///         economically harmless; see _computeBidAsk.
+///         own execution — it cannot inflate the fee base. An instant source swap therefore cannot move the
+///         fee base, but it can still widen the quote arbitrarily or halt it, so it is a change to the
+///         pool's pricing (see IAnchorSource); see _computeBidAsk.
 ///
 ///         Clamp parameters (minMargin, MAX_REF_STALENESS) and the reference binding are immutable;
 ///         the source pointer is instantly swappable (no timelock needed: any source is clamp-bounded
@@ -41,8 +43,8 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///         Two deployment variants, selected by the immutable MUTABLE_PARAMS flag:
 ///         - Immutable (false): nothing is tunable except the source pointer.
 ///         - Customizable (true): the curator may additionally tune confidenceParam; a fixed marginStep
-///           bias is set at construction (immutable). For the SHAPED quote — and unlike the source
-///           path above, which is bounded on both edges — the guarantee is one-directional: the final
+///           bias is set at construction (immutable). For the SHAPED quote — exactly as for the source
+///           path above — the guarantee is one-directional: the final
 ///           quote is never TIGHTER than the multiplied reference interval plus minMargin, and nothing caps
 ///           how far it may widen. Note the multiplied spread: a sub-1× per-leg multiplier tightens
 ///           that term, so minMargin (required positive) is the only part no live knob can move.
@@ -96,7 +98,7 @@ contract AnchoredPriceProvider is IPriceProvider {
     /// @notice Per-side minimum margin on top of the reference spread, BPS_BASE_U scale (1 bps = 1e14).
     uint256 public immutable minMargin;
     /// @notice Reference older than this (seconds) halts quoting — never clamp to a stale anchor.
-    ///         Zero means the reference must be in the current block (refTime == block.timestamp).
+    ///         Zero means refTime == block.timestamp, both in whole seconds (not a block-number match).
     uint256 public immutable MAX_REF_STALENESS;
     /// @notice Hard ceiling for the per-leg spread multipliers (BPS_BASE_U scale, 1e18 = 1.0×).
     ///         Bounds how far a live multiplier can WIDEN the band. >= BPS_BASE_U so the 1.0×
@@ -116,7 +118,8 @@ contract AnchoredPriceProvider is IPriceProvider {
     address public source;
 
     // ── Knobs (tunable only when MUTABLE_PARAMS; the immutable variant keeps the construction
-    //    defaults forever AND never SLOADs them — the reads are gated behind MUTABLE_PARAMS). ─
+    //    values forever). Per-leg staleness and multipliers are read in both variants; the shaping
+    //    knob (confidenceParam) is read only behind MUTABLE_PARAMS. ─
     uint256 public confidenceParam;
     uint256 public lastConfidenceUpdate;
 
@@ -186,14 +189,14 @@ contract AnchoredPriceProvider is IPriceProvider {
         baseFeedId = _baseFeedId;
         quoteFeedId = _quoteFeedId;
 
-        // Tokens live ONLY here (the oracles are token-free): the pair is an explicit,
+        // Tokens live ONLY here (providers never read a token from the oracle): the pair is an explicit,
         // mandatory input — including the synthetic (two-feed) mode, where the factory
         // knows the pair when it creates the pool.
         require(_baseToken != address(0) && _quoteToken != address(0) && _baseToken != _quoteToken);
         baseToken = _baseToken;
         quoteToken = _quoteToken;
 
-        if (_maxRefStaleness > 7 days) revert MaxRefStalenessOutOfBounds(); // 0 allowed = same-block reference
+        if (_maxRefStaleness > 7 days) revert MaxRefStalenessOutOfBounds(); // 0 allowed: refTime must equal block.timestamp (seconds)
         MAX_REF_STALENESS = _maxRefStaleness;
 
         // Spread-multiplier ceiling. Must be >= 1.0× so the 1.0× default is in range (a multiplier
@@ -203,7 +206,7 @@ contract AnchoredPriceProvider is IPriceProvider {
 
         // minMargin must be strictly positive. The `refBid >= refAsk` halt in _computeBidAsk is not
         // a sufficient safety net on its own: it only fires on an EXACTLY collapsed band, and with
-        // minMargin == 0 and spreadBps == 1 the band is ~0.0001% wide, passes every guard, and the
+        // minMargin == 0 and spreadBps == 1 the band is ~0.0001% per side (~0.0002% wide), passes every guard, and the
         // provider still reports `isProvider() == true` — the audited "never tighter than
         // mid ± (spreadBps + minMargin)" floor would be satisfiable by a band of essentially zero
         // width. A positive minMargin is the only term that does not depend on the oracle's spread.
@@ -215,7 +218,8 @@ contract AnchoredPriceProvider is IPriceProvider {
         // Initial config (source + per-leg staleness + per-leg multipliers), applied through the SAME
         // internal helpers the post-deploy setters use — one validated path (StalenessOutOfBounds /
         // SpreadMultOutOfBounds against the immutables set just above). Applies to BOTH variants: for
-        // the immutable variant these become the permanent values (no setters); pass
+        // the immutable variant these become the permanent values except `source` (setSource works on both
+        // variants); pass
         // {source:0, maxRefStaleness, maxRefStaleness, 1e18, 1e18} for the plain 1.0×/shared-staleness default.
         _applySource(_init.source);
         _applyStaleness(_init.baseMaxStaleness, _init.quoteMaxStaleness);
@@ -352,8 +356,9 @@ contract AnchoredPriceProvider is IPriceProvider {
     ///      512-bit product with `num` is handled by Math.mulDiv. `den` is always > 0 (mid2 == 0 halts
     ///      the read; ORACLE_DECIMALS is a nonzero constant).
     ///
-    ///      `den` bound, by caller: from _computeBidAsk it is a raw mid, so den·BPS_BASE_U ≲ 1.8e37
-    ///      (uint64 mid). From _shapedQuote it is `den · CONFIDENCE_BASE` (1e10), i.e. up to ~1.8e47 —
+    ///      `den` bound, by caller: from _computeBidAsk it is a raw mid, so den·BPS_BASE_U < 2¹²⁸·1e18
+    ///      (the uint128 guard ceiling). From _shapedQuote it is
+    ///      `den · CONFIDENCE_BASE` (1e10), i.e. below 2¹²⁸·1e28 —
     ///      still far inside uint256, and the denominator argument of mulDiv never overflows since it
     ///      is a plain multiplication of two bounded uint256 values.
     ///
@@ -404,7 +409,7 @@ contract AnchoredPriceProvider is IPriceProvider {
             //
             // The quote currencies cancelling is an ASSUMPTION, enforced nowhere on-chain. Nothing
             // here, in the factory (whose envelope is keyed on baseFeedId alone), or in the pool checks
-            // that the two legs share a denominator — so a misconfigured pair such as BTC/USD ÷ EUR/USD
+            // that the two legs share a denominator — so a misconfigured pair such as BTC/USD ÷ ETH/BTC
             // produces a confident, tightly-banded, completely meaningless cross that passes every
             // guard in this contract. Choosing two legs that actually share a quote currency is the
             // deployer's responsibility and part of the LP's diligence before depositing; there is no
@@ -483,7 +488,8 @@ contract AnchoredPriceProvider is IPriceProvider {
         uint256 refAsk;
         if (synthetic) {
             // Divide opposing interval edges, including each E8 mid's [mid, mid+1) quantum.
-            // Products are bounded by uint64 mids and factors < 2e18; denominators are positive.
+            // Mids stay below the uint128 guard ceiling and factors below 2e18, so every product fits
+            // Math.mulDiv's 512-bit path; denominators are positive.
             refBid = Math.mulDiv(midNum, Q64 * (BPS_BASE_U - baseHalf), (midDen + 1) * (BPS_BASE_U + quoteHalf));
             refAsk = Math.mulDiv(
                 midNum + 1, Q64 * (BPS_BASE_U + baseHalf), midDen * (BPS_BASE_U - quoteHalf), Math.Rounding.Ceil
@@ -508,8 +514,9 @@ contract AnchoredPriceProvider is IPriceProvider {
             return (0, type(uint128).max, 0);
         }
 
-        // Single-feed E8 cover. The stored mid is floored onto the 8-decimal grid, so the true mid T
-        // obeys mid <= T < mid + 1 and the upstream interval's upper edge is (mid + 1)·(1 + u). Apply
+        // Single-feed E8 cover. A Pyth or Chainlink mid is floored onto the 8-decimal grid, so the true
+        // mid T obeys mid <= T < mid + 1 (a compressed mid steps by 2^e, so its error can exceed one
+        // quantum) and the upstream interval's upper edge is (mid + 1)·(1 + u). Apply
         // the uncertainty AND the margin to `midNum + 1` so quantization and uncertainty compound,
         // exactly as the synthetic edges above already do. Taking the wider of mid·(1 + u + m) and a
         // bare (mid + 1) instead undercovers whenever mid·m < 1 + u — a cheap feed with a sub-quantum
@@ -524,7 +531,7 @@ contract AnchoredPriceProvider is IPriceProvider {
         }
 
         // Custom quote: source (both variants) or shaped reference quote (customizable variant).
-        //    Immutable reference mode quotes the band directly — zero knob SLOADs.
+        //    Immutable reference mode quotes the band directly — no shaping-knob SLOADs.
         address _source = source;
         uint256 cBid;
         uint256 cAsk;

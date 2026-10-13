@@ -33,8 +33,8 @@ contract MockPriceProvider is IPriceProvider {
         return keccak256(abi.encodePacked(base, quote));
     }
 
-    /// @dev The reference defaults to the arithmetic mid of bid/ask, which always satisfies the
-    ///      `bid <= referencePrice <= ask` invariant. Use `setQuoteWithReference` to skew it — or to break
+    /// @dev The reference defaults to the arithmetic mid of bid/ask, which satisfies the
+    ///      `bid <= referencePrice <= ask` invariant whenever the setter is given bid <= ask, both within uint128. Use `setQuoteWithReference` to skew it — or to break
     ///      it deliberately, for the consumer-side rejection tests.
     function setQuote(
         address baseToken,

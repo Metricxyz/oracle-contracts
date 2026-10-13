@@ -64,7 +64,7 @@ contract PriceProvider is IPriceProvider {
     error MaxTimeDeltaOutOfBounds();
 
     // ── Constructor ─────────────────────────────────────────────────────
-    // Tokens live ONLY here (the oracles are token-free): the pair is an explicit,
+    // Tokens live ONLY here (providers never read a token from the oracle): the pair is an explicit,
     // mandatory constructor input, held as immutables and exposed via token0/token1.
     constructor(
         address _factory,
@@ -149,8 +149,9 @@ contract PriceProvider is IPriceProvider {
     ///      multiplier units).
     ///
     ///      shapedDenom = STEP_DENOM × CONFIDENCE_BASE = (1e8 × 1e18) × 1e10 = 1e36. Numerator bound:
-    ///      mid ≤ 2⁶⁴ and (CONFIDENCE_BASE + n) ≤ ~6e10 → mid·(CB+n) ≤ ~1.1e30; the 512-bit product with
-    ///      Q64·stepFactor (< 3.6e37) is handled by Math.mulDiv. A bid that confidence pushes to ≤ 0
+    ///      mid < 2¹²⁸ (the guard ceiling) and (CONFIDENCE_BASE + n) ≤ ~6e10 →
+    ///      mid·(CB+n) ≤ ~2e49; the 512-bit product with
+    ///      Q64·stepFactor (< 2⁶⁴·2e18 ≈ 3.7e37) is handled by Math.mulDiv. A bid that confidence pushes to ≤ 0
     ///      (n ≥ CONFIDENCE_BASE) returns 0 and trips the bid>0 halt in the caller.
     function _shapedQuote(uint256 mid, uint256 n) internal view returns (uint256 bidOut, uint256 askOut) {
         uint256 shapedDenom = STEP_DENOM * CONFIDENCE_BASE;
@@ -220,7 +221,7 @@ contract PriceProvider is IPriceProvider {
         //    (Pyth / Chainlink), which store a plain 8-decimal integer. CompressedOracleV1 stores a
         //    U64x32 pseudo-float (27-bit mantissa / 5-bit exponent), so its representable step is
         //    2^e quanta — 65_536 of them at BTC scale, not 1 — and one quantum does not cover its
-        //    rounding. The shortfall is bounded by the 2^-27 relative mantissa precision, far below
+        //    rounding. The shortfall is bounded by the 2^-26 relative precision of a 27-bit floored mantissa, far below
         //    any realistic spread, so this is a precision note rather than a live gap — but the
         //    inequality above is not literally true for a compressed feed.
         //
@@ -241,8 +242,12 @@ contract PriceProvider is IPriceProvider {
         //    No mirror cap is needed on the bid. `stepBidFactor` is BPS_BASE_U − marginStep, so a
         //    negative marginStep does scale the bid up — but `bid > mid` requires
         //    m > rel/(1 − rel) > rel (m = |marginStep|, rel = spread·confidence/CONFIDENCE_BASE),
-        //    and m > rel is exactly the inversion condition already rejected above. So BID <= mid <= T
-        //    holds for every quote that survives that guard, and an explicit cap here would be dead code.
+        //    and m > rel is the inversion condition the guard above rejects — up to rounding. When the
+        //    excess is below one Q64 unit, Floor on the bid and Ceil on the ask can land on the same
+        //    integer; the strict `>` admits that tie. Some ties then leave the bid one unit above the
+        //    floored mid (e.g. mid = 6, confidence 0, marginStep = -450000) and others do not
+        //    (mid = 390625, marginStep = -1). Step 8's reference check halts the former; a cap here
+        //    would instead repair the bid and keep quoting.
 
         // 7. Validity + hard invariant: bid must be strictly less than ask. bidOut == 0 when confidence
         //    eats the whole bid (n >= CONFIDENCE_BASE), or marginStep < 0 tightens it past the ask.
@@ -253,18 +258,19 @@ contract PriceProvider is IPriceProvider {
         // 8. The reported reference: the oracle mid on the same Q64 scale, floored. Every shaping
         //    factor is applied around this value, so it is the fee base the consumer is owed.
         //
-        //    BID <= ref: the bid factors are (CONFIDENCE_BASE − n)/CONFIDENCE_BASE ≤ 1 and
-        //    stepBidFactor/BPS_BASE_U, and step 6's note proves the only way their product exceeds 1
-        //    is the inversion the guard above already rejected — so the floored bid cannot exceed the
-        //    floored mid. ref <= ASK: the cover in step 6 set the ask to
+        //    BID <= ref is not guaranteed. The bid factors can multiply to more than 1 (a negative
+        //    marginStep), and the floored bid can then exceed the floored mid — but only when it also
+        //    meets or crosses the pre-cover ask, since a bid factor above 1 forces an ask factor below
+        //    1 and so ask <= floor(mid) + 1. The guard above rejects a crossing; a tie survives it, and
+        //    the check below halts the quote. ref <= ASK: the cover in step 6 set the ask to
         //    ceil((mid + 1)·Q64·coverFactor / (STEP_DENOM·CONFIDENCE_BASE)) with coverFactor >=
         //    CONFIDENCE_BASE·BPS_BASE_U, i.e. at least ceil((mid + 1)·Q64/1e8), strictly above
         //    floor(mid·Q64/1e8).
         uint256 refOut = Math.mulDiv(mid, Q64, ORACLE_DECIMALS, Math.Rounding.Floor);
 
-        //    DEFENCE IN DEPTH — unreachable per the proof above, and deliberately kept: this is the
-        //    invariant the consumer reverts on, so if a future change to the shaping ever breaks it,
-        //    the feed must halt rather than hand the pool a quote it will reject mid-swap.
+        //    Reachable on the rounding tie described in step 6, and otherwise defence in depth: this
+        //    is the invariant the consumer reverts on, so whenever shaping breaks it the feed must halt
+        //    rather than hand the pool a quote it will reject mid-swap.
         if (refOut < bidOut || refOut > askOut) {
             return (0, type(uint128).max, 0);
         }

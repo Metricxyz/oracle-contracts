@@ -230,7 +230,7 @@ contract CompressedOracleTest is Test {
     }
 
     function testFutureTimestampReverts() public {
-        // MAX_TIME_DRIFT = 0: any timestamp past block.timestamp reverts
+        // MAX_TIME_DRIFT = 0: a timestamp whose whole second is past block.timestamp reverts
         uint56 tsMs = uint56((block.timestamp + 1) * 1000);
         bytes memory payload = _wordAt(0, 0, _packRaw(1_000_000, 3, 3), tsMs);
 

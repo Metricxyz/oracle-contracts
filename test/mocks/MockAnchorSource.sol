@@ -20,7 +20,7 @@ contract MockAnchorSource {
     Mode public mode;
     uint128 public bid = 1e4;
     uint128 public ask = 1e8;
-    /// @dev Zero = report the arithmetic mid of bid/ask, which is always in band.
+    /// @dev Zero = report the arithmetic mid of bid/ask, which is in band whenever bid <= ask.
     uint128 public referencePrice;
 
     address public token0 = address(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);

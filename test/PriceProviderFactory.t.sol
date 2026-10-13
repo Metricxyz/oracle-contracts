@@ -11,7 +11,7 @@ import {IOffchainOracle} from "../contracts/interfaces/IOffchainOracle.sol";
 
 // ── Mock oracle ────────────────────────────────────────────────────────────
 
-// Registrationless + token-free: the oracle exposes only the gated price() path plus
+// Registrationless + token-free: an open, ungated stub of the price() surface plus
 // priceGuard; providers hold their own token pair, so the oracle carries no token metadata.
 contract MockOracle is IOffchainOracle {
     mapping(bytes32 => uint256) private refTimes;

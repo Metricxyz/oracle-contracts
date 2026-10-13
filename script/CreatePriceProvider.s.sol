@@ -25,7 +25,7 @@ import {IPriceProvider} from "../contracts/interfaces/IPriceProvider.sol";
 ///                    1e18 (constructor reverts MarginStepOutOfBounds otherwise). 0 = no step.
 ///   MAX_TIME_DELTA – seconds; must be > 0 and <= 7 days (constructor reverts
 ///                    MaxTimeDeltaOutOfBounds otherwise)
-///   BASE_TOKEN     – base token address (mandatory — the oracles are token-free)
+///   BASE_TOKEN     – base token address (mandatory — providers never read a token from the oracle)
 ///   QUOTE_TOKEN    – quote token address (mandatory; must differ from BASE_TOKEN)
 ///
 /// ENV (optional, sensible defaults):
@@ -35,7 +35,7 @@ import {IPriceProvider} from "../contracts/interfaces/IPriceProvider.sol";
 ///                            deployments.priceProviderFactory)
 ///
 /// Usage:
-///   NETWORK=ethereum FEED_ID=397 BASE_TOKEN=0xcbB7… QUOTE_TOKEN=0xA0b8… \
+///   NETWORK=ethereum REFERENCE=pyth FEED_ID=397 BASE_TOKEN=0xcbB7… QUOTE_TOKEN=0xA0b8… \
 ///   MARGIN_STEP=0 MAX_TIME_DELTA=60 \
 ///   PRIVATE_KEY=0x… forge script script/CreatePriceProvider.s.sol --rpc-url ethereum --broadcast
 ///   (or the thin wrapper: … ./script/create-price-provider.sh)

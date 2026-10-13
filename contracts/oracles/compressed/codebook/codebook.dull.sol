@@ -2,7 +2,8 @@
 pragma solidity ^0.8.28;
 
 /// @title CodebookDull
-/// @notice Utility for mapping values in [0, 10_000] to 8-bit indices and back.
+/// @notice Unfilled template of the codebook layout: TABLE is empty, so it encodes nothing and decodes
+///         every index to (0, false). The canonical, filled table is Codebook256.
 library CodebookDull {
     uint16 internal constant MAX_VALUE = 10_000;
     uint8 internal constant MAX_INDEX = type(uint8).max; // 255
