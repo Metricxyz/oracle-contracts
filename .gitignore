@@ -1,45 +1,26 @@
-.vscode
-# Node modules
-/node_modules
-
-# Compilation output
-/dist
-
-# pnpm deploy output
-/bundle
-
-# Hardhat Build Artifacts
-/artifacts
-
-# Hardhat compilation (v2) support directory
+# Foundry
+/out
 /cache
-
-# Typechain output
-/types
-
-# Hardhat coverage reports
+broadcast/
+lcov.info
 /coverage
 
-
-/out
-/bin
-lcov.info
-var/*
-
-broadcast/
+# Environment
 .env
 
-*.bkp*
-
-.slither
-.aderyn
-
+# Node tooling (prettier, coverage scripts in package.json)
+/node_modules
 package-lock.json
 
-# examples packages
-examples/**/node_modules/
-!examples/mm-pusher-ts/package-lock.json
+# Local tooling
+.vscode
+.slither
+.aderyn
+*.bkp*
 
+# Claude Code: the skills symlink is committed; local settings are not
+.claude/*
+!.claude/skills
 
 # macOS Finder metadata
 .DS_Store

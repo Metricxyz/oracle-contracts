@@ -10,3 +10,4 @@
 [submodule "lib/pyth-crosschain"]
 	path = lib/pyth-crosschain
 	url = https://github.com/pyth-network/pyth-crosschain
+	branch = main

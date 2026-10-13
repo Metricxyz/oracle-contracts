@@ -4,9 +4,6 @@
   "license": "SEE LICENSE IN licenses/",
   "type": "module",
   "scripts": {
-    "registry:update": "node contract-registry/update.mjs",
-    "addresses:check": "node scripts/check-doc-addresses.mjs",
-    "addresses:regen": "node scripts/regen-retired-addresses.mjs",
     "coverage": "COVERAGE_MODE=1 forge coverage --ir-minimum --report lcov && genhtml -o coverage lcov.info --branch-coverage",
     "coverage:serve": "npx http-server ./coverage/"
   },

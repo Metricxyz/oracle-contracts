@@ -6,6 +6,25 @@
       "dataStreamsOracle": "0x810A649974f21bB6D3b2E781597EdBDAabe82228",
       "anchoredProviderFactory": "0xb0eAE19259500Ac4Ca59b9a5cb8cDB2Da8076F0A",
       "pythOracle": "0x30a88bf894D1b806125a23ebf23D715496fD7102"
+    },
+    "oracle": {
+      "maxTimeDrift": 0,
+      "expectedProperties": [
+        0,
+        4,
+        5,
+        12
+      ],
+      "chainlink": {
+        "verifierProxyV050": "0x5A1634A86e9b7BfEf33F0f3f3EA3b1aBBc4CC85F",
+        "verifierProxyV051": "",
+        "feeToken": "0x514910771AF9Ca656af840dff83E8264EcF986CA"
+      }
+    },
+    "access": {
+      "approvedFactories": [
+        "0x2a53833cc95548cf52c7b159110e22D3a9018f32"
+      ]
     }
   },
   "base": {
@@ -15,6 +34,25 @@
       "compressedOracle": "0xE844701934D9C6085B292e428F41b911cC0b3872",
       "dataStreamsOracle": "0x810A649974f21bB6D3b2E781597EdBDAabe82228",
       "anchoredProviderFactory": "0xb0eAE19259500Ac4Ca59b9a5cb8cDB2Da8076F0A"
+    },
+    "oracle": {
+      "maxTimeDrift": 0,
+      "expectedProperties": [
+        0,
+        4,
+        5,
+        12
+      ],
+      "chainlink": {
+        "verifierProxyV050": "0xDE1A28D87Afd0f546505B28AB50410A5c3a7387a",
+        "verifierProxyV051": "",
+        "feeToken": "0x88Fb150BDc53A65fe94Dea0c9BA0a6dAf8C6e196"
+      }
+    },
+    "access": {
+      "approvedFactories": [
+        "0x2a53833cc95548cf52c7b159110e22D3a9018f32"
+      ]
     }
   },
   "hyperevm": {
@@ -24,6 +62,221 @@
       "compressedOracle": "0xE844701934D9C6085B292e428F41b911cC0b3872",
       "dataStreamsOracle": "0x810A649974f21bB6D3b2E781597EdBDAabe82228",
       "anchoredProviderFactory": "0xb0eAE19259500Ac4Ca59b9a5cb8cDB2Da8076F0A"
+    },
+    "oracle": {
+      "maxTimeDrift": 0,
+      "expectedProperties": [
+        0,
+        4,
+        5,
+        12
+      ],
+      "chainlink": {
+        "verifierProxyV050": "0x60fAa7faC949aF392DFc858F5d97E3EEfa07E9EB",
+        "verifierProxyV051": "",
+        "feeToken": ""
+      }
+    },
+    "access": {
+      "approvedFactories": [
+        "0x2a53833cc95548cf52c7b159110e22D3a9018f32"
+      ]
+    }
+  },
+  "robinhood": {
+    "deployments": {
+      "priceProviderFactory": "0x050502eE4Da0eE2a9D44eE6046310F9f1532aCF2",
+      "compressedOracle": "0xE844701934D9C6085B292e428F41b911cC0b3872",
+      "dataStreamsOracle": "0x810A649974f21bB6D3b2E781597EdBDAabe82228",
+      "anchoredProviderFactory": "0xb0eAE19259500Ac4Ca59b9a5cb8cDB2Da8076F0A",
+      "pythOracle": "0x30a88bf894D1b806125a23ebf23D715496fD7102"
+    },
+    "oracle": {
+      "maxTimeDrift": 0,
+      "expectedProperties": [
+        0,
+        4,
+        5,
+        12
+      ],
+      "chainlink": {
+        "verifierProxyV050": "0xcE73c8ad08CBDEaCa6078BF0627C8fe0a9a536E7",
+        "verifierProxyV051": "",
+        "feeToken": ""
+      }
+    },
+    "access": {
+      "approvedFactories": [
+        "0x2a53833cc95548cf52c7b159110e22D3a9018f32"
+      ]
+    }
+  },
+  "arbitrum": {
+    "deployments": {
+      "compressedOracle": "0xE844701934D9C6085B292e428F41b911cC0b3872",
+      "priceProviderFactory": "0x050502eE4Da0eE2a9D44eE6046310F9f1532aCF2",
+      "pythOracle": "0x30a88bf894D1b806125a23ebf23D715496fD7102",
+      "dataStreamsOracle": "0x810A649974f21bB6D3b2E781597EdBDAabe82228",
+      "anchoredProviderFactory": "0xb0eAE19259500Ac4Ca59b9a5cb8cDB2Da8076F0A"
+    },
+    "oracle": {
+      "maxTimeDrift": 0,
+      "expectedProperties": [
+        0,
+        4,
+        5,
+        12
+      ],
+      "chainlink": {
+        "verifierProxyV050": "0x478Aa2aC9F6D65F84e09D9185d126c3a17c2a93C",
+        "verifierProxyV051": "",
+        "feeToken": "0xf97f4df75117a78c1A5a0DBb814Af92458539FB4"
+      }
+    },
+    "access": {
+      "approvedFactories": [
+        "0x2a53833cc95548cf52c7b159110e22D3a9018f32"
+      ]
+    }
+  },
+  "bsc": {
+    "deployments": {
+      "compressedOracle": "0xE844701934D9C6085B292e428F41b911cC0b3872",
+      "priceProviderFactory": "0x050502eE4Da0eE2a9D44eE6046310F9f1532aCF2",
+      "pythOracle": "0x30a88bf894D1b806125a23ebf23D715496fD7102",
+      "dataStreamsOracle": "0x810A649974f21bB6D3b2E781597EdBDAabe82228",
+      "anchoredProviderFactory": "0xb0eAE19259500Ac4Ca59b9a5cb8cDB2Da8076F0A"
+    },
+    "oracle": {
+      "maxTimeDrift": 0,
+      "expectedProperties": [
+        0,
+        4,
+        5,
+        12
+      ],
+      "chainlink": {
+        "verifierProxyV050": "0xF276a4BC8Da323EA3E8c3c195a4E2E7615a898d1",
+        "verifierProxyV051": "",
+        "feeToken": ""
+      }
+    },
+    "access": {
+      "approvedFactories": [
+        "0x2a53833cc95548cf52c7b159110e22D3a9018f32"
+      ]
+    }
+  },
+  "polygon": {
+    "deployments": {
+      "compressedOracle": "0xE844701934D9C6085B292e428F41b911cC0b3872",
+      "priceProviderFactory": "0x050502eE4Da0eE2a9D44eE6046310F9f1532aCF2",
+      "pythOracle": "0x30a88bf894D1b806125a23ebf23D715496fD7102",
+      "dataStreamsOracle": "0x810A649974f21bB6D3b2E781597EdBDAabe82228",
+      "anchoredProviderFactory": "0xb0eAE19259500Ac4Ca59b9a5cb8cDB2Da8076F0A"
+    },
+    "oracle": {
+      "maxTimeDrift": 10,
+      "expectedProperties": [
+        0,
+        4,
+        5,
+        12
+      ],
+      "chainlink": {
+        "verifierProxyV050": "0xF276a4BC8Da323EA3E8c3c195a4E2E7615a898d1",
+        "verifierProxyV051": "",
+        "feeToken": ""
+      }
+    },
+    "access": {
+      "approvedFactories": [
+        "0x2a53833cc95548cf52c7b159110e22D3a9018f32"
+      ]
+    }
+  },
+  "avalanche": {
+    "deployments": {
+      "compressedOracle": "0xE844701934D9C6085B292e428F41b911cC0b3872",
+      "priceProviderFactory": "0x050502eE4Da0eE2a9D44eE6046310F9f1532aCF2",
+      "dataStreamsOracle": "0x810A649974f21bB6D3b2E781597EdBDAabe82228",
+      "anchoredProviderFactory": "0xb0eAE19259500Ac4Ca59b9a5cb8cDB2Da8076F0A",
+      "pythOracle": "0x30a88bf894D1b806125a23ebf23D715496fD7102"
+    },
+    "oracle": {
+      "maxTimeDrift": 0,
+      "expectedProperties": [
+        0,
+        4,
+        5,
+        12
+      ],
+      "chainlink": {
+        "verifierProxyV050": "0x79BAa65505C6682F16F9b2C7F8afEBb1821BE3f6",
+        "verifierProxyV051": "",
+        "feeToken": ""
+      }
+    },
+    "access": {
+      "approvedFactories": [
+        "0x2a53833cc95548cf52c7b159110e22D3a9018f32"
+      ]
+    }
+  },
+  "monad": {
+    "deployments": {
+      "compressedOracle": "0xE844701934D9C6085B292e428F41b911cC0b3872",
+      "priceProviderFactory": "0x050502eE4Da0eE2a9D44eE6046310F9f1532aCF2",
+      "pythOracle": "0x30a88bf894D1b806125a23ebf23D715496fD7102",
+      "dataStreamsOracle": "0x810A649974f21bB6D3b2E781597EdBDAabe82228",
+      "anchoredProviderFactory": "0xb0eAE19259500Ac4Ca59b9a5cb8cDB2Da8076F0A"
+    },
+    "oracle": {
+      "maxTimeDrift": 0,
+      "expectedProperties": [
+        0,
+        4,
+        5,
+        12
+      ],
+      "chainlink": {
+        "verifierProxyV050": "0xEd813D895457907399E41D36Ec0bE103E32148c8",
+        "verifierProxyV051": "",
+        "feeToken": ""
+      }
+    },
+    "access": {
+      "approvedFactories": [
+        "0x2a53833cc95548cf52c7b159110e22D3a9018f32"
+      ]
+    }
+  },
+  "megaeth": {
+    "deployments": {
+      "compressedOracle": "0xE844701934D9C6085B292e428F41b911cC0b3872",
+      "priceProviderFactory": "0x050502eE4Da0eE2a9D44eE6046310F9f1532aCF2",
+      "pythOracle": "0x30a88bf894D1b806125a23ebf23D715496fD7102",
+      "anchoredProviderFactory": "0xb0eAE19259500Ac4Ca59b9a5cb8cDB2Da8076F0A",
+      "dataStreamsOracle": "0x810A649974f21bB6D3b2E781597EdBDAabe82228"
+    },
+    "oracle": {
+      "maxTimeDrift": 0,
+      "expectedProperties": [
+        0,
+        4,
+        5,
+        12
+      ],
+      "chainlink": {
+        "verifierProxyV050": "0x60fAa7faC949aF392DFc858F5d97E3EEfa07E9EB",
+        "verifierProxyV051": "",
+        "feeToken": ""
+      }
+    },
+    "access": {
+      "approvedFactories": [
+        "0x2a53833cc95548cf52c7b159110e22D3a9018f32"
+      ]
     }
   }
 }
