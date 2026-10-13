@@ -3,8 +3,9 @@
 # known false positives of `generic-api-key`, each provably public:
 #   - any 40-hex Ethereum ADDRESS (a public identifier, never a credential): generic-api-key flags
 #     these en masse (1036 hits, all addresses, in historical token-list / deployment JSON blobs);
-#   - anvil's universally-known deterministic dev-mnemonic private keys (accounts #0-#2),
-#     used only against a throwaway local anvil in examples/mm-pusher-ts/demo/anvil-demo.sh.
+#   - anvil's universally-known deterministic dev-mnemonic private keys (accounts #0-#2), which
+#     the removed pusher examples used against a throwaway local anvil and which the gitleaks job
+#     still meets when it scans this repository's history.
 # The allowlist matches EXACT VALUES (regexTarget = secret), not paths: a real secret added
 # to any of these files is still caught.
 
@@ -19,8 +20,8 @@ regexes = [
   # mask a longer high-entropy token; real 64-hex private keys still trip their own specific rules.
   # Subsumes the individual token addresses (cbBTC / USDC) that used to be listed here one by one.
   '''(?i)^0x[0-9a-f]{40}$''',
-  # anvil universally-known deterministic dev-mnemonic private keys (accounts #0-#2), throwaway
-  # local-only in examples/mm-pusher-ts/demo/anvil-demo.sh (64-hex, so not covered by the address rule).
+  # anvil universally-known deterministic dev-mnemonic private keys (accounts #0-#2), history-only
+  # since the pusher examples moved out (64-hex, so not covered by the address rule).
   '''^0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80$''',
   '''^0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d$''',
   '''^0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a$''',

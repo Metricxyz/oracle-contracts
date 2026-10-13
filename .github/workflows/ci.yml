@@ -12,7 +12,12 @@ jobs:
           submodules: recursive
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          # PINNED, not "stable". `forge fmt` output is version-dependent: stable moved on
+          # 2026-08-27 and started wanting a braced block where `) revert X();` sits on one line,
+          # which turned `forge fmt --check` red on contracts nobody had touched. A formatter
+          # that changes under you is a formatter that fails unrelated PRs. Bump this pin and run
+          # `forge fmt` in the same commit when upgrading — deliberately, not by surprise.
+          version: v1.7.1
       - run: forge fmt --check
       - run: forge build --sizes
       # Guard: the CompressedOracle push path is the raw-calldata fallback, kept selector-safe by a
@@ -36,25 +41,3 @@ jobs:
           fetch-depth: 0
       - name: Run gitleaks
         run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest git /repo
-  examples:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: examples/mm-pusher-ts
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: stable
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: examples/mm-pusher-ts/package-lock.json
-      - run: npm ci
-      - run: npm run fmt:check
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run demo
