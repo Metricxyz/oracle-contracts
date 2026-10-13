@@ -7,8 +7,8 @@ bytes, and CreateX guards it as
 therefore a function of the deployer key and the salt version — not of bytecode or constructor
 arguments — so **every contract listed below sits at the same address on every chain it is deployed
 to**, and no other sender can consume one of these salts. The deploy pipeline is operated by the
-maintainers; the canonical per-contract salt versions live in `script/config/salts.json`.
-`node script/verify-deployment.mjs --expect 1.1.0` reconciles this file against the chains at any time.
+maintainers, who hold the canonical per-contract salt versions and reconcile this file against the
+chains from their own tooling; neither ships in this repo.
 
 Columns, left to right: ethereum (1), base (8453), arbitrum (42161), bsc (56), polygon (137),
 avalanche (43114), monad (143), megaeth (4326), hyperevm (999), robinhood (4663).
@@ -30,21 +30,21 @@ identical across builds.
 **Same address does not mean same bytecode.** Constructor arguments baked into the runtime as
 immutables differ per chain. **polygon runs a 10-second future tolerance** (`maxTimeDrift = 10`;
 every other chain carries 0), so on polygon all three oracles' runtimes differ from their siblings,
-and `ChainlinkOracle` additionally bakes a per-chain `feeToken` — giving it four distinct runtimes
+and `ChainlinkOracle` additionally bakes a per-chain `feeToken` — giving it five distinct runtimes
 (ethereum, base, arbitrum and polygon each their own; the six chains with no fee token share one).
 The nine non-polygon `PythOracle`s are byte-identical (runtime keccak `0xd7169b76…7ca2`, 9,829
 bytes), as are the nine non-polygon `CompressedOracleV1`s (`0x546b1ee2…f340`, 8,662 bytes); the two
 factories take no per-chain constructor arguments and are byte-identical on all ten chains. The
-pinned per-chain ledger of full runtime hashes is `script/config/codehashes.json` (checked by
-`verify-deployment.mjs`), while `_deploy`'s reference check compares metadata-stripped code against
-a local build.
+pinned per-chain ledger of full runtime hashes is held maintainer-side, while `_deploy`'s
+reference check compares metadata-stripped code against a local build.
 
 **ethereum's Pyth lane is live.** Pyth Lazer has code on mainnet at its chain-constant address
 `0xACeA761c27A909d4D3895128EBe6370FDE2dF481` (a proxy, and it has accepted real pushes). The
 canonical `PythOracle` is deployed, funded and allow-listed: the mainnet `AnchoredProviderFactory`
-allow-list holds **both** oracles (`getOracles → [ChainlinkOracle, PythOracle]`). The mainnet
-anchored providers created so far all anchor to *Pyth*, so mainnet quoting depends on the Pyth
-pusher's liveness rather than on the Chainlink lane. Those providers bound reference staleness at
+allow-list holds **both** oracles (`getOracles` returns `PythOracle` and `ChainlinkOracle`). Most mainnet
+anchored providers anchor to *Pyth*, so mainnet quoting depends mainly on the Pyth pusher's
+liveness; a provider's lane is fixed at creation, so read its `offchainOracle()` to know which.
+The Pyth-anchored ones bound reference staleness at
 15 seconds, so a push gap wider than that halts them fail-closed until the next push — monitor feed
 `refTime` freshness against that bound, along with the fee balance below.
 
@@ -55,16 +55,18 @@ pusher's liveness rather than on the Chainlink lane. Those providers bound refer
 so `confidenceParam = 10_000` is a true 1× multiplier. The `AnchoredProviderFactory` DEFAULT_CLASS
 envelope is identical on all ten chains: `minMarginMin = 1e11` (0.001 bps), `minMarginMax = 1e15`
 (10 bps), staleness 0–60 s, `spreadMultMax = 2e18` (2.0×). The envelope has **no spread cap**: a
-wide oracle spread widens a provider's band rather than halting it, and the only spread-related
-halts are the stall sentinel (spread 65535) and a band reaching 100% half-width, both fail-closed
-at read time.
+wide oracle spread widens a provider's band rather than halting it, but APP rejects raw spread >= 65534 (saturated uncertainty or the 65535 stall sentinel) before
+multiplication. Nonpositive interval edges or an upper relative deviation plus margin reaching
+100% also halt at read time. See [the reference](docs/oracle-reference.md).
 
 **The `PythOracle` needs a native-token balance.** It pays a 1-wei Pyth Lazer verification fee per
-push out of its own balance; at zero balance every relay reverts with `Insufficient fee provided`.
+push out of its own balance. Below that, the call into Pyth Lazer cannot carry its value and the relay
+reverts before Pyth's own `Insufficient fee provided` check is reached; the oracle's ingestion
+entry point is payable, so a relay can also attach the fee itself.
 All ten chains are funded to 1e9 wei (1 gwei) — the deploy script's `PYTH_FUND_WEI` default, and
 effectively inexhaustible at a billion pushes. The balance is public (`cast balance`) and belongs on
-the monitoring list — watch the *direction*, not just non-zero: a balance that stops decreasing means
-the pusher died, and 1-wei pool-registration fees can even push it up. See §5 of
+the monitoring list. Use accepted feed observations for liveness: registration payments, top-ups
+and admin withdrawals also affect the balance. See §5 of
 [`docs/mm-operations-guide.md`](./docs/mm-operations-guide.md).
 
 ## Per-chain notes
@@ -97,26 +99,24 @@ and 0 is the value to prefer. A push that arrives inside the tolerance is accept
 both price providers treat any future `refTime` as stale, so the feed is stored and unquotable at
 the same time — and the monotonic gate then refuses the earlier-timestamped push that would repair
 it. The feed is stuck until block time catches up. Widen it only for a chain whose block timestamps
-genuinely run ahead of the pusher, and only by that much.
+genuinely lag the publishers' clocks, and only by that much.
 
 ## Salt versions
 
-The salt column in the table above is current; `script/config/salts.json` is the machine source.
+The salt column in the table above is current; the machine-readable source is maintainer-side.
 
 Salt versions are scoped to the deployer key: the guarded salt mixes the sender in, so a version
 consumed under one key does not constrain another, and a key rotation restarts numbering at
 `production-v1`. Under a given key a version is consumed permanently — CreateX reverts where the
 salt's address already has code — so a fresh full release must pick a new `RELEASE_VERSION` and
 never reuse one. Because addresses are salted by the version, any later release sits at new
-addresses; this file tracks the current addresses only. The machine-readable list of retired
-addresses is generated into `script/config/retired-addresses.json`.
-`node scripts/regen-retired-addresses.mjs` regenerates it after every redeploy.
-`scripts/check-doc-addresses.mjs` gates docs/, examples/, skills/ and README.md against it in CI.
+addresses; this file tracks the current addresses only. The list of retired addresses is kept
+maintainer-side, and no address in this repo's docs, examples or skills points at one.
 
 The permissioned salt also settles who can reach these addresses: CreateX's guard binds the salt to
 the deployer, so a third party cannot claim "our" address on a chain where it is still empty.
 Onboarding chain #11 is therefore a plain release run for that chain under the current salt
 versions, which lands the same five addresses there. Two automated checks back the deploy itself:
 `_deploy` refuses already-deployed code it cannot reproduce from local sources with this run's
-constructor args (metadata-stripped hash), and `verify-deployment.mjs` reconciles full per-chain
-runtime hashes against the pinned ledger in `script/config/codehashes.json`.
+constructor args (metadata-stripped hash), and the maintainers reconcile full per-chain runtime
+hashes against their pinned ledger.

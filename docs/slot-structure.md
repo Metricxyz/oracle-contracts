@@ -60,9 +60,10 @@ Updates overwrite the entire storage slot value.
   the first 4 bytes of calldata can never equal a function selector (none start with `0x00`),
   so a push whose word content happens to spell a selector still hits the fallback rather than
   dispatching to that function.
-- `updateBySignature(feedCreator, newSlotValue, signature)` accepts a slot word signed
-  by the feed creator over `keccak256(abi.encode(chainid, oracleAddress, feedCreator,
-  newSlotValue))`, and is callable by anyone.
+- `updateBySignature(feedCreator, newSlotValue, signature)` accepts a slot word whose EIP-191
+  signature by the feed creator covers the 32-byte digest `keccak256(abi.encode(chainid,
+  oracleAddress, feedCreator, newSlotValue))`, and is callable by anyone. The contract recovers over
+  the prefixed hash (`toEthSignedMessageHash`), so a signature over the bare digest is rejected.
 
 There is **no deadline** on either push path: each word carries its own timestamp and
 the per-slot monotonicity check neutralizes replay (a replayed word is "not newer" and
@@ -79,4 +80,4 @@ bits   7 …   0 : slotId (uint8, used to derive the storage key; cleared before
 Guards:
 
 - `timestamp` must strictly increase per slot (freshness guard; non-newer words are skipped).
-- `timestamp` must not be further in the future than the configured drift (`FutureTimestamp`).
+- `floor(timestampMs / 1000) <= block.timestamp + MAX_TIME_DRIFT` must hold — the check is on whole seconds (`FutureTimestamp` otherwise).

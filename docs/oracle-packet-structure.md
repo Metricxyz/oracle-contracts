@@ -20,8 +20,9 @@ Notes:
 - `p` — `U64x32`-encoded price (stored as `uint32`).
 - `s0` / `s1` — indices into `Codebook256.TABLE`. The decoded values are in **0.01-bps units**
   (fraction × 1e6): `100` = 1 bp, `10_000` = 1% = the table's ceiling — *not* whole bps. The reserved
-  pair `s0 = s1 = 0xFF` is the stall sentinel and reads back as `65_535` on both, which is the only
-  value the price providers halt on.
+  pair `s0 = s1 = 0xFF` is the stall sentinel and reads back as `65_535` on both. It is the only
+  explicit stall marker; providers also halt on stale, zero or guard-breaching data, on spreads past
+  their own limits, and when confidence shaping consumes the bid.
 - `slotId` is used to derive the storage key, but is **cleared before storing** (the stored slot always has `0x00` in the lowest byte).
 - The entire slot is overwritten on update: if you update a single lane, you must still supply correct values for the other lanes.
 
@@ -45,11 +46,16 @@ dispatching to that function.
 `updateBySignature(feedCreator, newSlotValue, signature)` expects `newSlotValue` to be a single slot word (same layout), signed by `feedCreator` over:
 
 ```text
-keccak256(abi.encode(chainid, oracleAddress, feedCreator, newSlotValue))
+digest = keccak256(abi.encode(chainid, oracleAddress, feedCreator, newSlotValue))
+signed = keccak256("\x19Ethereum Signed Message:\n32" ‖ digest)
 ```
+
+The creator signs the 32-byte `digest` as an EIP-191 personal message — the contract recovers the
+signer from `MessageHashUtils.toEthSignedMessageHash(digest)`. A signature over `digest` itself,
+without the prefix, is rejected.
 
 ## Required Guards
 
-- `timestamp` must not be further in the future than the configured drift (`FutureTimestamp` otherwise).
+- `floor(timestampMs / 1000) <= block.timestamp + MAX_TIME_DRIFT` must hold — the check is on whole seconds (`FutureTimestamp` otherwise).
 - `timestamp` must be strictly increasing per slot (older updates are ignored — this is
   also the replay protection: there is no deadline anywhere on the push paths).

@@ -21,14 +21,13 @@
 
 The committed `contracts/oracles/utils/Codebook256.sol` is canonical — it is generated from the
 source JSON files under `contracts/oracles/compressed/codebook/`, which are also included here for
-reference. Regeneration is a maintainer workflow, run by `scripts/generate-codebook.cjs` (in this
-repo) and enforced in CI by the `codebook` job, which regenerates and then `git diff --exit-code`s —
-so drift in either direction fails the build. The generator:
+reference. Regeneration is a maintainer workflow; the generator is not shipped in this repo. It:
 
 1. Flattens every numeric entry from `codebook/*.json` into a single byte string. ⚠️ It globs the
    **whole directory**, sorted — adding a second JSON file that sorts before the canonical one shifts
-   every index, and both CI gates still pass because they regenerate from the same glob. Keep exactly
-   one source file.
+   every index, and a check that regenerates from the same glob passes all the same. Keep exactly
+   one source file. This repository's CI does not regenerate the table; the generator and its drift
+   check belong to the maintainer workflow.
 2. Validates that each entry is an integer in `[0, MAX_VALUE]` (10_000) — *not* merely the uint16
    range, since an entry of 65_535 would let a single lane mint the reserved stall sentinel — and
    that the table is exactly 256 entries, the uint8 index space. It does **not** check for duplicates;
@@ -46,4 +45,7 @@ The regenerated Solidity file and the JSON source are always committed together 
   read, bricking the compressed lane; more are silently unreachable through a uint8 index.
 - The table's ceiling is `MAX_VALUE = 10_000`, which in the 0.01-bps units the providers consume is
   **1%**, not 100%. The plain `PriceProvider`'s circuit breaker sits at 50_000 (5%), so a compressed
-  feed can never trip it — a compressed lane halts only via the reserved `0xFF/0xFF` sentinel.
+  feed can never trip that breaker. The reserved `0xFF/0xFF` pair is the only explicit stall
+  marker, but not the only way to halt: stale or zero data, a guard breach, or a confidence
+  multiplier large enough to consume the whole bid (spread `10_000` at `confidenceParam = 1_000_000`)
+  halt a provider too.

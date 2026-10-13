@@ -27,8 +27,10 @@ Ask the user (or infer from their request):
 - **AnchoredPriceProvider (APP)** — recommended. Deployed on all ten production chains. Quotes are
   clamped to a band derived from a reference oracle's own uncertainty; parameters must sit inside
   an admin-curated envelope. Reference: `docs/anchored-price-provider.md`. Note the reference
-  oracle varies per chain: avalanche has no `PythOracle` and megaeth no `ChainlinkOracle`
-  (`DEPLOYMENTS.md` has the matrix), so check `isOracle()` on the target chain first.
+  oracle varies per chain: on avalanche the `PythOracle` is deployed and allow-listed but cannot
+  ingest until Pyth Lazer ships there, and on megaeth the `ChainlinkOracle` is deployed but kept off
+  the allow-list until its verifier is live (`DEPLOYMENTS.md` has the per-chain notes). Check
+  `isOracle()` on the target chain, and that the feed actually has data, before relying on a lane.
 - **Plain PriceProvider** — deployed on all ten chains; no envelope, thinner construction (single-oracle
   passthrough with three knobs). Reference: `docs/price-provider-quickstart.md`.
 
@@ -40,12 +42,13 @@ committed `script/config/networks.json` is deploy-script working state and may l
 
 ## Step 3 — read-only probes (no key needed), per provider type
 
-**AnchoredPriceProvider path** — run the Step-0 checks of `docs/anchored-price-provider-quickstart.md`:
+**AnchoredPriceProvider path** — run the Step 1 checks of `docs/anchored-price-provider-quickstart.md`:
 
 1. `isOracle(referenceOracle)` on the factory must return `true`.
-2. The `DEFAULT_CLASS()` envelope must exist (last tuple field `true`) and your intended
-   `MIN_MARGIN` / `MAX_REF_STALENESS` / `MAX_SPREAD_MULT` must sit inside it (the envelope fields
-   are `minMarginMin/Max`, `stalenessMin/Max`, `spreadMultMax` — it carries no spread cap).
+2. Resolve the effective class: `feedClass(baseFeedId)`, falling back to `DEFAULT_CLASS()` only
+   when that returns zero. That class's envelope must exist (last tuple field `true`) and your
+   intended `MIN_MARGIN` / `MAX_REF_STALENESS` / `MAX_SPREAD_MULT` must sit inside it (the envelope
+   fields are `minMarginMin/Max`, `stalenessMin/Max`, `spreadMultMax` — it carries no spread cap).
 3. Feed-data probe: `cast call $ORACLE "price(bytes32,address)(uint256,uint256,uint16,uint256)"
    $FEED 0x0000000000000000000000000000000000000000 --from
    0x0000000000000000000000000000000000000000 --rpc-url $RPC`.
@@ -59,7 +62,8 @@ envelope: there is no factory-side setup to verify (see `docs/price-provider-qui
 Step 0). The feed-data probe depends on the reference oracle family: for `PythOracle` /
 `ChainlinkOracle` use the `FeedNotFound`-revert interpretation above; for `CompressedOracleV1`
 (the wrapper's default) `price(feedId, 0x0)` does NOT revert for a well-formed feedId — a
-never-pushed feed returns `(0, 0, 0, 0)`, and any non-zero mid/refTime means the feed has data.
+never-written slot returns `(0, 0, 0, 0)`; a never-written position in a written slot returns a
+zero mid with the slot's timestamp. Only a non-zero mid means the feed has a price.
 
 ## Step 4 — dry-run, confirm, broadcast
 
@@ -71,10 +75,13 @@ they confirm. The caller key (`PRIVATE_KEY`) becomes the provider owner.
 ## Step 5 — verify
 
 1. Extract the provider address from the factory's creation event in the broadcast output.
-2. Read back the provider's `owner()`, `token0()`, `token1()` and its immutable params; show them.
+2. Read back the owner from the factory (`providerOwner(address)(address)`), then the provider's
+   `token0()`, `token1()` and its immutable params; show them.
 3. If the feed already has data: `cast call` the provider's
-   `getQuote()(uint128,uint128,uint128)` — as an `eth_call` with no `--from` it exercises
-   the full read path. Three values come back: bid, ask, and the reference price, which must sit
+   `getQuote()(uint128,uint128,uint128)` with `--from 0x0000000000000000000000000000000000000000`.
+   That zero-sender `eth_call` checks the data and the quote math, but it skips the pool gate
+   (in-swap binding, pool blacklist, registration), so test read access separately by simulating
+   the real swap. Three values come back: bid, ask, and the reference price, which must sit
    between them (it is the oracle/anchor mid, and the consumer rejects a quote where it does not).
 
 ## Troubleshooting

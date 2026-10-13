@@ -1,6 +1,6 @@
 # Anchored Price Provider (APP) — creation & lifecycle flow
 
-The **Anchored Price Provider (APP)** is the one standard price provider for public pools. Every quote
+The **Anchored Price Provider (APP)** is the standard anchored construction. Pool tiers impose additional requirements beyond provider factory membership. Every quote
 it returns is **clamped to a reference band** derived from the anchor oracle's own uncertainty:
 
 ```
@@ -34,16 +34,16 @@ edges. It no longer defines the synthetic reference interval.
 One qualification, load-bearing: `spreadBps` enters the band **multiplied** by the per-leg
 `spreadMult`, which may be set *below* 1× — so the guarantee is relative to the multiplied spread,
 not the raw oracle spread, and a provider owner or a delegated updater can tighten that term (to
-zero, in the limit) at any time. `minMargin` is the only term nobody can move after deployment, and
+zero, in the limit) when the provider is mutable and its cooldown has elapsed. `minMargin` is the only term nobody can move after deployment, and
 it is required to be strictly positive.
 
 A custom source, confidence or `marginStep` may widen a quote beyond the interval; any tighter
 edge is clipped to the reference. This is enforced by the band clamp (`min`/`max` vs the reference
-`refBid`/`refAsk`), the `bidOut >= askOut` halt, and Floor/Ceil rounding — so a source is never reviewed:
-the reference bounds how wrong it can be.
+`refBid`/`refAsk`), the `bidOut >= askOut` halt, and Floor/Ceil rounding. The factory does not
+review arbitrary source code; operators must assess the source and its dependencies.
 
-In **source mode** that bound is one-directional. Inward, the source is clipped at the live reference
-band, so it can never quote inside the anchor's own uncertainty. Outward, nothing bounds it: the pool
+In **source mode** that bound is one-directional. Inward, the source is clipped at the live configured reference
+band. Per-leg multipliers below 1× can narrow that band relative to the upstream uncertainty; minMargin remains a positive floor. Outward, nothing bounds it: the pool
 quotes as wide as the source says. A source that derives its quote from a venue an outsider can move
 therefore hands that outsider the pool's price, with no privileged action and nobody behaving
 maliciously. Note what widening does *not* reach: the reference price, and therefore the consumer's
@@ -54,8 +54,8 @@ That is an accepted position rather than a gap: **bounding the outward side is t
 operator's due diligence.** Point a source only at a venue whose price you would quote directly, and
 treat `setSource` as a change to the pool's pricing rather than a bounded, reversible knob.
 
-**8-decimal quantization cover.** Each stored mid represents a pre-normalization benchmark in
-`[mid, mid+1)/1e8`, so the upstream interval's upper edge is `(mid+1)/1e8 · (1 + u)`. Single-feed
+**8-decimal quantization cover.** A Pyth or Chainlink mid represents a pre-normalization
+benchmark in `[mid, mid+1)/1e8`, so the upstream interval's upper edge is `(mid+1)/1e8 · (1 + u)`. Single-feed
 quoting applies the uncertainty and the margin to that honest upper bound: the ask is
 `(mid+1)/1e8 · (1 + u + minMargin)`, rounded up. Quantization and uncertainty compound; taking the
 wider of the plain band `mid · (1 + u + minMargin)` and a bare `(mid+1)/1e8` undercovers whenever
@@ -82,8 +82,9 @@ cannot mask a misconfigured `marginStep`.
 Contracts: `contracts/AnchoredPriceProvider.sol`, `contracts/AnchoredProviderFactory.sol`,
 interface `contracts/interfaces/IAnchoredProviderFactory.sol`. One factory instance is deployed **per
 chain**, with the chain's reference oracles admin-allow-listed on that same instance — Pyth +
-Chainlink on most chains, Chainlink alone on avalanche and Pyth alone on megaeth (see
-`DEPLOYMENTS.md` for the deployed address and the per-chain matrix).
+Chainlink on most chains. On avalanche both are allow-listed, but the Pyth lane cannot ingest until
+Pyth Lazer ships there; on megaeth only Pyth is allow-listed, because the Chainlink verifier is not
+live yet (see `DEPLOYMENTS.md` for the deployed addresses and the per-chain notes).
 
 ---
 
@@ -107,13 +108,14 @@ Before any APP can be created against a feed:
 
 1. **Reference oracle deployed** — `PythOracle` / `ChainlinkOracle` / `CompressedOracle`. It supplies the
    shared `OracleData{ price (8-dec mid), spread (0.01-bps units), timestampMs }`.
-2. **Feed(s) have data in that oracle.** The oracles are registrationless — there is no registration
-   step and no registrar role. A **Pyth / Chainlink** feed exists once its first provider-signed update
+2. **Feed(s) have data in that oracle.** The oracles are registrationless: there is no feed registration.
+   Pool read registration for Pyth and Chainlink is a separate step. There is no registrar role. A **Pyth / Chainlink** feed exists once its first provider-signed update
    lands (until then oracle reads revert `FeedNotFound`); a **Compressed** feed exists once its creator
    pushes into the corresponding slot. Provider creation itself does not validate the feed — a provider
    anchored to a feed with no data deploys fine and simply halts at read time until data arrives.
-3. *(For live pool reads, not for creation itself)* the oracle's read-access layer must admit the consuming
-   pool: its AMM factory `addApprovedFactory(factory)` + the pool `register(feedId, pool, factory)`. See
+3. *(For live pool reads from Pyth or Chainlink, not for creation itself)* the oracle's read-access layer
+   must admit the consuming pool: its AMM factory `addApprovedFactory(factory)` + the pool
+   `register(feedId, pool, factory)`. Compressed reads are open and need neither. See
    the `OracleBase` natspec (`contracts/oracles/providers/OracleBase.sol`) for the full mechanism.
 
 ---
@@ -141,7 +143,7 @@ ADMIN (multisig)                                   CREATOR (permissionless)     
                                                                   ▼
                                                        6. pool reads getQuote()
                                                           → (bid, ask, referencePrice)
-                                                          (eligibility: factory.isProvider(p))
+                                                          (provenance: factory.isProvider(p))
 ```
 
 ### Step 0 — Deploy the factory (one per chain)
@@ -182,8 +184,10 @@ factory.setEnvelope(classId, envelope);  // ADMIN_ROLE
 ```
 
 `setEnvelope` rejects (`BadEnvelope`) any box that is empty or whose corners fall outside the provider's
-hard bounds — so every point inside an accepted envelope is constructor-valid and `create()` can only
-fail with `ParamsOutOfEnvelope`, never a confusing provider-level revert:
+hard bounds — so every in-envelope value of the three parameters it bounds is constructor-valid, and
+for those three `create()` fails with `ParamsOutOfEnvelope` rather than a provider-level revert.
+`marginStep`, the token pair and the initial configuration sit outside the envelope and can still
+revert in the provider constructor:
 
 - `classId != 0`
 - `minMarginMin > 0` (the provider constructor rejects `minMargin == 0` — `MinMarginZero`)
@@ -233,11 +237,11 @@ address provider = factory.createAnchoredProvider(
     baseFeedId,         // its class drives the envelope
     quoteFeedId,        // 0 = single-feed; else synthetic ratio
     minMargin,          // per-side margin, 1e18 scale (1 bps = 1e14); MUST be > 0
-    maxRefStaleness,    // seconds; 0 = reference must be same-block
+    maxRefStaleness,    // seconds; 0 = refTime must equal block.timestamp
     maxSpreadMult,      // per-leg spread-multiplier ceiling (1e18 = 1.0×)
     mutableParams,      // false = immutable, true = customizable
     marginStep,         // fixed shaping bias (NOT envelope-bound)
-    baseToken,          // pair tokens — mandatory (the oracles are token-free)
+    baseToken,          // pair tokens — mandatory (providers never read a token from the oracle)
     quoteToken,
     init                // InitialConfig: (source, baseMaxStaleness, quoteMaxStaleness,
 );                      //                 baseSpreadMult, quoteSpreadMult)
@@ -255,16 +259,16 @@ envelope (`ParamsOutOfEnvelope`) → deploy `new AnchoredPriceProvider(...)`. Th
 | `oracle` | which allow-listed reference oracle to anchor to |
 | `baseFeedId` | the feed; **single-feed** mid = `price(baseFeedId)`. Its class selects the envelope |
 | `quoteFeedId` | optional 2nd feed for **synthetic** ratio: mid = `price(base) / price(quote)` (e.g. BTC/USD ÷ ETH/USD = BTC/ETH); `0` = single-feed |
-| `minMargin` | per-side margin on top of the oracle spread, `1e18` scale (1 bps = `1e14`). **Must be > 0** (`MinMarginZero`): it is the only band term no live knob can shrink — with a zero floor the band rests entirely on the oracle's own spread, and a spread of one unit yields a ~0.0001%-wide band that passes every guard |
-| `maxRefStaleness` | seconds; a reference older than this **halts** quoting (`FeedStalled`). `0` = must be in the current block |
+| `minMargin` | per-side margin on top of the oracle spread, `1e18` scale (1 bps = `1e14`). **Must be > 0** (`MinMarginZero`): it is the only band term no live knob can shrink — with a zero floor the band rests entirely on the oracle's own spread, and a spread of one unit yields a band of ~0.0001% per side that passes every guard |
+| `maxRefStaleness` | seconds; a reference older than this **halts** quoting (`FeedStalled`). `0` = `refTime` must equal `block.timestamp` (whole seconds) |
 | `maxSpreadMult` | per-leg spread-multiplier ceiling (`1e18` = 1.0×); must be `>= 1e18` and `<=` the envelope's `spreadMultMax`. Bounds how far a live multiplier can widen the band |
-| `mutableParams` | `false` → fully immutable (only `setSource`); `true` → customizable (`confidenceParam` + the per-leg staleness/multiplier knobs tunable via factory) |
+| `mutableParams` | `false` → fixed knobs (owner can still replace `source`); `true` → customizable (`confidenceParam` + the per-leg staleness/multiplier knobs tunable via factory) |
 | `marginStep` | fixed shaping bias, immutable, applied to the step factors at construction. **NOT** envelope-bound — the band clamp neutralizes any sign. Requires `\|marginStep\| < 1e18` |
-| `baseToken` / `quoteToken` | the pair tokens — **mandatory**, non-zero, distinct (the oracles are token-free; tokens live only on the provider) |
+| `baseToken` / `quoteToken` | the pair tokens — **mandatory**, non-zero, distinct (providers never read a token from the oracle; the pair lives on the provider) |
 | `init` | `InitialConfig` applied at construction through the same validation the setters use: `(source, baseMaxStaleness, quoteMaxStaleness, baseSpreadMult, quoteSpreadMult)`; pass `(0, maxRefStaleness, maxRefStaleness, 1e18, 1e18)` for the plain reference-mode default |
 
 Provider-constructor guards (all satisfied automatically when params are in a valid envelope, except the
-non-envelope-bound `marginStep` and `init`): `maxRefStaleness <= 7 days`
+non-envelope-bound `marginStep`, token pair and `init`): `maxRefStaleness <= 7 days`
 (`MaxRefStalenessOutOfBounds`), `minMargin > 0` (`MinMarginZero`),
 `maxSpreadMult >= 1e18` (`MaxSpreadMultOutOfBounds`), `|marginStep| < 1e18`
 (`MarginStepOutOfBounds`), tokens non-zero and distinct; the `init` legs go through the same
@@ -289,14 +293,16 @@ edges — behaviorally identical to the immutable variant.
 
 ### Step 6 — Consume from a pool
 
-Public-pool eligibility is the machine-checkable predicate **`factory.isProvider(provider) == true`**
-(deployed by this factory ⇒ clamp-bounded with parameters that were inside the envelope at deploy time).
+**`factory.isProvider(provider) == true`** establishes factory provenance: the provider was created
+under that factory's envelope constraints. It does not establish live feed health, pair semantics,
+pool read registration or the pool's product-level tier.
 
 The read path is **attributed and non-view** (the Pyth/Chainlink oracles disable view reads): the pool
 marks itself in-swap with this provider and calls `getQuote()` (no args); the provider forwards
 the pool (its `msg.sender`) to `oracle.price(feedId, pool)`, which binds the read via
-`pool.inSwap() == provider`. This requires the oracle to have the pool's factory approved and the pool
-registered (Prerequisite 3).
+`pool.inSwap() == provider`. This requires the pool to be registered for the feed (Prerequisite 3).
+Factory approval is checked when the pool registers, not on each read: removing a factory from the
+oracle's approved list does not undo registrations made through it.
 
 ---
 

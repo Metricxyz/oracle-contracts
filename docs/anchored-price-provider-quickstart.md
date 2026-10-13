@@ -1,147 +1,148 @@
-# Anchored Price Provider creation — quickstart (manual)
+# Create an Anchored Price Provider
 
-Create one Anchored Price Provider. Concrete values are for **base**; swap addresses/feed ids for other
-networks. Full reference: [`anchored-price-provider.md`](./anchored-price-provider.md).
+Create an APP through an existing `AnchoredProviderFactory`. The caller becomes its
+owner. APP prevents a quote from being tighter than its configured reference band;
+it does not cap outward widening. Read [the overview](oracle-overview.md#what-anchoring-guarantees)
+and rehearse the [integration quickstart](integration-quickstart.md) first.
 
-```bash
-# ── base addresses & keys — CANONICAL, kept in sync with ../script/config/networks.json
-# (CREATE3: same address on every chain that carries the contract; see ../DEPLOYMENTS.md).
-# Do NOT copy addresses out of older docs or git history: every superseded generation is
-# still deployed and still accepts transactions, so a stale address fails silently — you
-# would bind a provider to an oracle nobody pushes to, or push into one nobody reads. ──
-export RPC=base                                                   # or https://mainnet.base.org
-export ANCHORED_PROVIDER_FACTORY=0xb0eAE19259500Ac4Ca59b9a5cb8cDB2Da8076F0A   # AnchoredProviderFactory
-export PYTH=0x30a88bf894D1b806125a23ebf23D715496fD7102            # reference oracle (Pyth)
-export CL=0x810A649974f21bB6D3b2E781597EdBDAabe82228              # reference oracle (Chainlink)
-export ADMIN_KEY=0x...     # factory admin (only for one-time factory setup)
-export CREATOR_KEY=0x...   # anyone — becomes the provider owner
+## Step 0 — prepare inputs
 
-# feed = Pyth Lazer id as bytes32:  cbBTC=397  ETH=2  USDC=7
-export FEED=$(cast to-uint256 397)        # cbBTC  -> 0x..018d
-```
+Run from the repository root with Foundry installed. Export these values in your
+shell or supply them through your normal environment tooling:
 
-## Step 0 — check the factory's on-chain state (read-only)
+| Variable | Value and constraints |
+| --- | --- |
+| `NETWORK` | A configured Foundry RPC alias/network key; configure its endpoint variable from `foundry.toml`, e.g. `RPC_BASE` for `base` |
+| `ANCHORED_PROVIDER_FACTORY` | Explicit factory address from [DEPLOYMENTS.md](../DEPLOYMENTS.md) |
+| `REFERENCE_ORACLE` | Explicit address of an allowed reference oracle |
+| `BASE_FEED_ID` | Reference feed, decimal or hexadecimal |
+| `QUOTE_FEED_ID` | `0` for a direct pair; otherwise a second feed from the same oracle |
+| `BASE_TOKEN`, `QUOTE_TOKEN` | Nonzero, distinct addresses matching the direct feed or synthetic ratio |
+| `MIN_MARGIN` | Positive fraction × `1e18`, within the effective envelope; `1e14` = 1 bp |
+| `MAX_REF_STALENESS` | Hard age ceiling in seconds, `0..604800`, within the effective envelope |
+| `MAX_SPREAD_MULT` | Per-leg multiplier ceiling, at least `1e18`, within the envelope |
+| `MUTABLE_PARAMS` | `false` fixes the initial knobs; `true` allows bounded, cooldown-limited updates |
+| `MARGIN_STEP` | Fixed shaping bias, strictly between `-1e18` and `1e18`; default `0` |
+| `PRIVATE_KEY` | Your provider creator's transaction key |
 
-```bash
-cast call $ANCHORED_PROVIDER_FACTORY "isOracle(address)(bool)" $PYTH --rpc-url $RPC          # need: true
-cast call $ANCHORED_PROVIDER_FACTORY "envelopes(bytes32)(uint256,uint256,uint256,uint256,uint256,bool)" \
-  $(cast call $ANCHORED_PROVIDER_FACTORY "DEFAULT_CLASS()(bytes32)" --rpc-url $RPC) --rpc-url $RPC   # last field must be true
-cast call $PYTH "price(bytes32,address)(uint256,uint256,uint16,uint256)" $FEED \
-  0x0000000000000000000000000000000000000000 \
-  --from 0x0000000000000000000000000000000000000000 --rpc-url $RPC
-# reverts FeedNotFound => no data yet. Anything else (a successful return, or a different
-# revert such as InvalidInSwap for pool=0x0) => the feed already has data. getOracleData()
-# is unconditionally disabled (ReadDisabled) and can never be used for this check — the
-# eth_call `--from` zero address puts tx.origin == address(0), which takes the tx.origin == 0
-# read path of the access-gated reader.
-```
+These commands use `--rpc-url "$NETWORK"`; set that alias's endpoint rather than only
+`RPC_URL`. Supplying explicit factory/oracle addresses avoids stale script defaults.
 
-> On **base**, the deployed factory's allow-list contains Pyth and Chainlink and the `DEFAULT_CLASS`
-> envelope — identical on all ten chains — is
-> `(minMargin 1e11..1e15, staleness 0..60s, spreadMultMax 2e18)` — `minMargin` has a nonzero floor
-> (`minMargin == 0` is rejected by the provider) — the Step 0
-> reads above verify this. The remaining prerequisite is feed data (Step 1). Steps 0a/0b below
-> apply only to a factory whose Step 0 checks fail.
+For a synthetic pair, match both denomination and token identity. For example,
+`cbBTC/USD ÷ USDC/USD` yields `cbBTC/USDC`; a single `cbBTC/USD` feed is not that
+conversion. The contracts do not validate the economic match. Both legs need fresh
+data, and on a Pyth or Chainlink oracle both need pool read registration.
 
-<details><summary>0a/0b — one-time factory setup (skip when the Step 0 checks pass)</summary>
+Initial configuration is optional:
 
-```bash
-# allow-list the reference oracle
-cast send $ANCHORED_PROVIDER_FACTORY "addOracle(address)" $PYTH --private-key $ADMIN_KEY --rpc-url $RPC
-# DEFAULT_CLASS envelope — the production default values:
-# (minMarginMin,minMarginMax,stalenessMin,stalenessMax,spreadMultMax,exists)
-cast send $ANCHORED_PROVIDER_FACTORY "setEnvelope(bytes32,(uint256,uint256,uint256,uint256,uint256,bool))" \
-  $(cast call $ANCHORED_PROVIDER_FACTORY "DEFAULT_CLASS()(bytes32)" --rpc-url $RPC) \
-  "(100000000000,1000000000000000,0,60,2000000000000000000,false)" --private-key $ADMIN_KEY --rpc-url $RPC
-```
-</details>
+| Variable | Default | Rule |
+| --- | --- | --- |
+| `SOURCE` | Zero address (reference mode) | Nonzero source must satisfy [IAnchorSource](../contracts/interfaces/IAnchorSource.sol) |
+| `BASE_MAX_STALENESS`, `QUOTE_MAX_STALENESS` | `MAX_REF_STALENESS` | Each must be at most the hard ceiling |
+| `BASE_SPREAD_MULT`, `QUOTE_SPREAD_MULT` | `1e18` | Each must be at most `MAX_SPREAD_MULT`; values below 1× are supported |
 
-## Step 1 — make sure the feed has data in the oracle
+A zero leg age limit means its observation time must equal `block.timestamp`, in whole seconds. There is
+no separate cross-leg timestamp-skew limit. Pick these values from the intended
+freshness policy and delivery path, not from a generic cadence recommendation.
 
-The oracles are registrationless — there is no feed registration and no registrar role. A feed exists
-once its first provider-signed update lands, pushed by the companion off-chain stack (published
-separately). Until then oracle reads revert `FeedNotFound`; provider **creation** still succeeds (the
-constructor does not read the oracle), but the provider halts at read time until data arrives.
+## Step 1 — inspect the effective factory policy
+
+Convert the base ID to a 32-byte value for ABI reads, then resolve its class:
 
 ```bash
-cast call $PYTH "price(bytes32,address)(uint256,uint256,uint16,uint256)" $FEED \
-  0x0000000000000000000000000000000000000000 \
-  --from 0x0000000000000000000000000000000000000000 --rpc-url $RPC
-# FeedNotFound => still no data; anything else => the feed has data (see Step 0)
+: "${NETWORK:?Set the Foundry RPC alias}"
+: "${ANCHORED_PROVIDER_FACTORY:?Set the factory from DEPLOYMENTS.md}"
+: "${REFERENCE_ORACLE:?Set the reference oracle from DEPLOYMENTS.md}"
+: "${BASE_FEED_ID:?Set the base feed ID}"
+BASE_FEED_BYTES32=$(cast to-uint256 "$BASE_FEED_ID")
+cast call "$ANCHORED_PROVIDER_FACTORY" "isOracle(address)(bool)" \
+  "$REFERENCE_ORACLE" --rpc-url "$NETWORK"
+CLASS_ID=$(cast call "$ANCHORED_PROVIDER_FACTORY" "feedClass(bytes32)(bytes32)" \
+  "$BASE_FEED_BYTES32" --rpc-url "$NETWORK")
+if [ "$CLASS_ID" = "0x0000000000000000000000000000000000000000000000000000000000000000" ]; then
+  CLASS_ID=$(cast call "$ANCHORED_PROVIDER_FACTORY" "DEFAULT_CLASS()(bytes32)" --rpc-url "$NETWORK")
+fi
+cast call "$ANCHORED_PROVIDER_FACTORY" \
+  "envelopes(bytes32)(uint256,uint256,uint256,uint256,uint256,bool)" \
+  "$CLASS_ID" --rpc-url "$NETWORK"
 ```
 
-## Step 2 — create the provider (anyone)
+Require `isOracle == true` and the envelope's last field `exists == true`. Its
+fields are `(minMarginMin, minMarginMax, stalenessMin, stalenessMax, spreadMultMax,
+exists)`. Check your requested parameters against the returned bounds. The class
+is selected by `baseFeedId`, not by `quoteFeedId`.
 
-Easiest — the script (`CreateAnchoredProvider.s.sol` via its wrapper). Pass the factory and oracle
-explicitly via `ANCHORED_PROVIDER_FACTORY` / `REFERENCE_ORACLE`: left unset, the script falls back to the committed
-`script/config/networks.json`, which is deploy-script working state and may lag the canonical
-addresses in `DEPLOYMENTS.md`. The caller becomes the provider owner:
+If these checks fail, select supported inputs or coordinate with the factory
+administrator. Factory setup is a separate administrator workflow described in
+[the APP reference](anchored-price-provider.md#step-1--curate-the-oracle-allow-list-admin).
+
+## Step 2 — verify each reference feed
+
+Run [the raw-data check](integration-quickstart.md#4-check-the-raw-data) for the base
+and, when configured, quote feed. Require successful reads with the intended price,
+spread and observation time. Provider creation does not read these feeds: it can
+succeed even when subsequent quotes halt.
+
+## Step 3 — simulate, then create
+
+With your chosen variables exported:
 
 ```bash
-NETWORK=base ANCHORED_PROVIDER_FACTORY=$ANCHORED_PROVIDER_FACTORY REFERENCE_ORACLE=$PYTH BASE_FEED_ID=397 \
-  BASE_TOKEN=0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf \
-  QUOTE_TOKEN=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 \
-  MIN_MARGIN=100000000000000 MAX_REF_STALENESS=60 \
-  PRIVATE_KEY=$CREATOR_KEY BROADCAST=1 ./script/create-anchored-provider.sh
+forge script script/CreateAnchoredProvider.s.sol --rpc-url "$NETWORK"
 ```
 
-(Omit `BROADCAST=1` for a dry-run. Optional env: `REFERENCE=pyth|chainlink`, `QUOTE_FEED_ID`,
-`MAX_SPREAD_MULT` (default `1e18`), `MUTABLE_PARAMS`, `MARGIN_STEP`, and the initial config applied
-at construction — `SOURCE`, `BASE_MAX_STALENESS` / `QUOTE_MAX_STALENESS` (default `MAX_REF_STALENESS`),
-`BASE_SPREAD_MULT` / `QUOTE_SPREAD_MULT` (default `1e18`) — see the script header.)
-
-Or the raw call. The last arg is the `InitialConfig` tuple
-`(source, baseMaxStaleness, quoteMaxStaleness, baseSpreadMult, quoteSpreadMult)` applied at
-construction through the same validation the setters use; pass `(0,<staleness>,<staleness>,1e18,1e18)`
-for the plain 1.0× / shared-staleness / reference-mode default:
+Check the printed configuration. Broadcast the same inputs when ready:
 
 ```bash
-# createAnchoredProvider(oracle, baseFeedId, quoteFeedId, minMargin, maxRefStaleness,
-#             maxSpreadMult, mutableParams, marginStep, baseToken, quoteToken, InitialConfig)
-cast send $ANCHORED_PROVIDER_FACTORY \
-  "createAnchoredProvider(address,bytes32,bytes32,uint256,uint256,uint256,bool,int256,address,address,(address,uint256,uint256,uint256,uint256))" \
-  $PYTH \
-  $FEED \
-  0x0000000000000000000000000000000000000000000000000000000000000000 \
-  100000000000000 \
-  60 \
-  1000000000000000000 \
-  false \
-  0 \
-  0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf \
-  0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 \
-  "(0x0000000000000000000000000000000000000000,60,60,1000000000000000000,1000000000000000000)" \
-  --private-key $CREATOR_KEY --rpc-url $RPC
+forge script script/CreateAnchoredProvider.s.sol --rpc-url "$NETWORK" --broadcast
 ```
 
-Param cheatsheet (must sit inside the `DEFAULT_CLASS` envelope above):
+The complete creation ABI, including the five-field `InitialConfig` tuple, is in
+[IAnchoredProviderFactory](../contracts/interfaces/IAnchoredProviderFactory.sol).
+The executable environment reference is
+[CreateAnchoredProvider.s.sol](../script/CreateAnchoredProvider.s.sol).
 
-| arg | value used | rule |
-|---|---|---|
-| `quoteFeedId` | `0` | `0` = single feed; non-zero = synthetic `base/quote` |
-| `minMargin` | `1e14` | `1e18` scale (1 bps = `1e14`); envelope `1e11..1e15`. **Must be > 0** — `0` reverts `MinMarginZero` |
-| `maxRefStaleness` | `60` | seconds; envelope `0..60`. On a **synthetic** pair this also sets how far apart in time the two legs may be — there is no separate cross-leg bound, so tighten it for two-feed providers |
-| `maxSpreadMult` | `1e18` | per-leg spread-multiplier ceiling (`1e18` = 1.0×); `>= 1e18`, envelope `spreadMultMax` |
-| `mutableParams` | `false` | `true` lets the owner tune `confidenceParam` + the per-leg knobs later |
-| `marginStep` | `0` | not envelope-bound; `\|x\| < 1e18` |
-| `baseToken` / `quoteToken` | pair addresses | **mandatory**, distinct, non-zero (the oracles are token-free) |
+## Step 4 — verify the provider
 
-## Step 3 — get the new provider address
+Read the address from the confirmed `ProviderDeployed` event, or list the creator's
+providers (paginate beyond 100):
 
 ```bash
-# all providers you created (newest last):
-cast call $ANCHORED_PROVIDER_FACTORY "getProviders(address,uint256,uint256)(address[],uint256)" \
-  $(cast wallet address --private-key $CREATOR_KEY) 0 100 --rpc-url $RPC
+: "${CREATOR_ADDRESS:?Set the address corresponding to PRIVATE_KEY}"
+cast call "$ANCHORED_PROVIDER_FACTORY" \
+  "getProviders(address,uint256,uint256)(address[],uint256)" \
+  "$CREATOR_ADDRESS" 0 100 --rpc-url "$NETWORK"
 ```
 
-(Or read the `provider` field of the `ProviderDeployed` event in the tx receipt.)
-
-## Step 4 — optional curation (owner)
+Set `PROVIDER` to your created address and inspect its effective configuration:
 
 ```bash
-cast send $ANCHORED_PROVIDER_FACTORY "setSource(address,address)" $PROVIDER $SOURCE --private-key $CREATOR_KEY --rpc-url $RPC
-# customizable variant only (mutableParams=true):
-cast send $ANCHORED_PROVIDER_FACTORY "setConfidence(address[],uint256[])" "[$PROVIDER]" "[5000]" --private-key $CREATOR_KEY --rpc-url $RPC
+: "${PROVIDER:?Set the created provider address}"
+cast call "$ANCHORED_PROVIDER_FACTORY" "isProvider(address)(bool)" "$PROVIDER" --rpc-url "$NETWORK"
+cast call "$PROVIDER" "baseFeedId()(bytes32)" --rpc-url "$NETWORK"
+cast call "$PROVIDER" "quoteFeedId()(bytes32)" --rpc-url "$NETWORK"
+cast call "$PROVIDER" "source()(address)" --rpc-url "$NETWORK"
+cast call "$PROVIDER" "baseMaxStaleness()(uint256)" --rpc-url "$NETWORK"
+cast call "$PROVIDER" "quoteMaxStaleness()(uint256)" --rpc-url "$NETWORK"
+cast call "$PROVIDER" "getQuote()(uint128,uint128,uint128)" \
+  --from 0x0000000000000000000000000000000000000000 --rpc-url "$NETWORK"
 ```
 
-Done — `factory.isProvider(provider) == true` is the public-pool eligibility check.
+Also verify `token0()`, `token1()` and the configured margins/multipliers. The quote
+must match the intended pair and satisfy the Q64.64 invariants in the
+[integration quickstart](integration-quickstart.md#5-create-the-provider).
+
+## Step 5 — understand ownership and finish wiring
+
+In **both** variants, the owner can replace `source` through the factory. With
+`MUTABLE_PARAMS = true`, owner/updater can also tune confidence and per-leg freshness
+and spread multipliers within the immutable bounds and 60-second cooldowns.
+`mutableParams = false` does not freeze source replacement or the pool's provider slot.
+
+Invalid custom-source output halts quoting; APP does not automatically fall back
+to its reference. See [provider controls](oracle-reference.md#provider-controls).
+
+Complete [pool wiring and read registration](integration-quickstart.md#6-wire-and-register-the-pool)
+for every reference leg and simulate the real swap path. Factory membership proves
+that the provider was created under factory constraints; pool tiers require
+additional product-level checks.

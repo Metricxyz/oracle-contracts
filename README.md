@@ -1,7 +1,7 @@
 # Oracle contracts
 
 On-chain price oracle suite for EVM chains: three oracle implementations that ingest signed or
-compressed off-chain price updates, plus a family of price providers that shape those raw oracle
+compressed off-chain price updates, plus standard price providers that shape those raw oracle
 reads into the bid/ask/reference quotes a pool or protocol consumes.
 
 - **`CompressedOracleV1`** — a registrationless, multi-feed oracle. Up to 4 feeds are packed into a
@@ -20,17 +20,22 @@ first verified update lands, and token metadata lives on the price providers (as
 immutables), not on the oracles.
 
 On top of the oracles sit the **price providers**: `PriceProvider` (attributed, access-gated
-reads) and `AnchoredPriceProvider` (quotes clamped to a band derived from a reference oracle's own
-uncertainty — deployed through `AnchoredProviderFactory`, which maintains an admin-curated
+reads) and `AnchoredPriceProvider` (quotes clamped to a band derived from a reference oracle's uncertainty and configured multipliers/margin — deployed through `AnchoredProviderFactory`, which maintains an admin-curated
 allow-list of reference oracles and per-pair-class parameter envelopes). The APP band bounds a custom
 source in **one** direction only — never tighter than the live band, with no bound on how far it may
 widen — see `IAnchorSource`. What a source can never move is the `referencePrice` the APP reports:
-that is the anchor's own mid, so a widened quote costs whoever trades against it a worse price but
-cannot inflate the consumer's fee base. `PriceProviderFactory` deploys the plain provider.
+that is the anchor's own mid. A widened quote changes execution terms without moving that reference. `PriceProviderFactory` deploys the plain provider.
 
 The off-chain half — a price feed that aggregates market data and pushers that publish signed or
 compressed updates into these oracles — is the companion off-chain stack (published separately);
 this repository only contains the on-chain side.
+
+## Documentation
+
+Start with the [documentation index](docs/README.md). The recommended path is
+[overview](docs/oracle-overview.md) → [integration quickstart](docs/integration-quickstart.md)
+→ [operations](docs/mm-operations-guide.md). Keep the
+[units, access and failure reference](docs/oracle-reference.md) open while integrating.
 
 ## Architecture
 
@@ -46,7 +51,7 @@ On-chain oracles
         ▼
 Price providers
   ├─ PriceProvider           (attributed, access-gated reads)
-  └─ AnchoredPriceProvider   (band-clamped to a reference oracle, via AnchoredProviderFactory)
+  └─ AnchoredPriceProvider   (band-clamped to a configured reference band, via AnchoredProviderFactory)
         │  getQuote() → (bid, ask, referencePrice)
         ▼
 Consumer (pool / protocol)
@@ -62,16 +67,15 @@ Consumer (pool / protocol)
 | `test/` | Foundry test suites, one `*.t.sol` per contract, mirroring `contracts/` |
 | `docs/` | Design notes on the compressed-slot format, encodings, and the Anchored Price Provider |
 | `licenses/` | Full text of the two licenses used in this repo |
-| `examples/` | `examples/mm-pusher-ts` — a self-contained TypeScript pusher skeleton for market makers: compressed-lane publishing and Pyth-Lazer relaying, with an offline anvil demo (`npm run demo`) |
-| `skills/` | Agent-executable instructions (Agent Skills format) for LLM-driven integrators: provider creation and both pusher lanes |
+| `skills/` | Agent-executable instructions (Agent Skills format) for LLM-driven integrators: provider creation |
 
 ## Quickstart
 
 ```bash
-git clone --recurse-submodules <this-repo-url>
-cd oracle-contracts
+git clone --recurse-submodules git@github.com:Metricxyz/oracles-contracts-public.git
+cd oracles-contracts-public
 forge build
-forge test        # 485 tests
+forge test
 ```
 
 Requires [Foundry](https://book.getfoundry.sh/) (solc is pinned to `0.8.33` in `foundry.toml`,
@@ -96,12 +100,12 @@ see [`DEPLOYMENTS.md`](./DEPLOYMENTS.md) for the current per-chain matrix and ad
 via CreateX `deployCreate3`, so each contract sits at the same address on every chain it's
 deployed to).
 
-Because the oracles are registrationless, there is no feed-registration step to integrate with — a
-feed exists once its first update lands from the companion off-chain stack.
+Because the oracles are registrationless, there is no
+feed-registration step to integrate with — a feed exists once its first update lands.
 
 To create your own `AnchoredPriceProvider` against a deployed `AnchoredProviderFactory`, follow the
-[creation quickstart](./docs/anchored-price-provider-quickstart.md), which walks `script/create-anchored-provider.sh`
-(wrapping `script/CreateAnchoredProvider.s.sol`) end to end — anyone can call it; the caller becomes
+[creation quickstart](./docs/anchored-price-provider-quickstart.md), which walks
+`script/CreateAnchoredProvider.s.sol` end to end — anyone can call it; the caller becomes
 the provider owner. See [`docs/anchored-price-provider.md`](./docs/anchored-price-provider.md) for
 the full design and admin-side controls (allow-list, envelopes) that gate what parameters a new
 provider can be created with.
@@ -109,30 +113,23 @@ provider can be created with.
 To create a plain `PriceProvider` instead — a thinner, single-oracle passthrough with no admin
 allow-list or envelope, deployed on all ten chains — follow the
 [plain-provider creation quickstart](./docs/price-provider-quickstart.md), which walks
-`script/create-price-provider.sh` (wrapping `script/CreatePriceProvider.s.sol`) end to end; same
+`script/CreatePriceProvider.s.sol` end to end; same
 permissionless-creator model as the APP path.
 
 The production deploy pipeline that first stood up the factories and oracles themselves (CreateX
 CREATE3, run once per chain) is operated by the maintainers; its tooling is not part of this repo.
 
-Market makers publishing their own prices (or relaying Pyth Lazer updates) should start from the
-[`examples/mm-pusher-ts`](./examples/mm-pusher-ts) package — a copyable pusher skeleton with an
-offline demo. If your integration is driven by an LLM coding agent, point it at the
-[`skills/`](./skills) directory: each skill is a self-contained, verifiable runbook
-(provider creation, compressed pusher, Pyth relayer).
+Market makers publishing their own prices (or relaying Pyth Lazer or Chainlink updates) start from
+the pusher package, which is a separate repository: [`Metricxyz/mm-pusher-ts`](https://github.com/Metricxyz/mm-pusher-ts).
+It carries the publishing examples for all three lanes, an offline anvil demo and its own agent
+skills. If your provider work is driven by an LLM coding agent, point it at the
+[`skills/`](./skills) directory here.
 
 ## Docs index
 
-| Doc | Description |
-|---|---|
-| [`docs/mm-operations-guide.md`](./docs/mm-operations-guide.md) | How a market maker launches and operates a metric pool (start here if you are new) |
-| [`docs/anchored-price-provider.md`](./docs/anchored-price-provider.md) | Anchored Price Provider (APP) design: reference vs. source mode, the audit-once band clamp and exactly what it does and does not bound |
-| [`docs/anchored-price-provider-quickstart.md`](./docs/anchored-price-provider-quickstart.md) | Manual, step-by-step walkthrough for creating one Anchored Price Provider |
-| [`docs/price-provider-quickstart.md`](./docs/price-provider-quickstart.md) | Manual, step-by-step walkthrough for creating one plain Price Provider |
-| [`docs/slot-structure.md`](./docs/slot-structure.md) | `CompressedOracleV1` slot/namespace layout and the packed, self-describing feedId |
-| [`docs/oracle-packet-structure.md`](./docs/oracle-packet-structure.md) | Bit layout of the 32-byte compressed slot word |
-| [`docs/codebook.md`](./docs/codebook.md) | `Codebook256` lookup-table format and the regeneration workflow |
-| [`docs/u64x32.md`](./docs/u64x32.md) | `U64x32`, the fixed-point price encoding stored inside compressed slots |
+The [documentation index](docs/README.md) maps each task to its guide and identifies
+the source of truth for deployments, interfaces, parameters and live configuration.
+It also links the detailed APP and compressed encoding references.
 
 ## License
 
