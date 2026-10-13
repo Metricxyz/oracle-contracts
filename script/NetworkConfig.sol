@@ -2,7 +2,6 @@
 pragma solidity ^0.8.28;
 
 import {Script, console} from "forge-std/Script.sol";
-import {IAnchoredProviderFactory} from "../contracts/interfaces/IAnchoredProviderFactory.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 
 /// @dev Oracle family discriminator — every oracle in this repo exposes it as a public constant.
@@ -79,13 +78,14 @@ abstract contract NetworkConfig is Script {
     // ── AnchoredProviderFactory introspection (shared by the deploy/redeploy scripts) ──
 
     /// @dev "Configured" = the DEFAULT_CLASS envelope exists. setEnvelope is the LAST transaction of
-    ///      a factory's initial config (after the addOracle calls), so an existing envelope proves
-    ///      the config sequence completed and a missing one proves it never did.
+    ///      a factory's initial config (after the addOracle calls), so an existing envelope is a
+    ///      strong hint the sequence completed. It is only a reading of the current envelope: it
+    ///      does not prove which transactions ran, and an envelope can be removed later.
     ///
-    ///      The identity probe guards the callers: the CREATE3 salt is permissionless, so code at a
-    ///      predicted address is not proof it is OUR factory (and a typo'd networks.json entry is
-    ///      not one either). A foreign contract would have to echo the exact class constant to get
-    ///      past this — refuse to mirror from or send admin transactions into anything failing it.
+    ///      The identity probe guards the callers: code at an address read from networks.json is not
+    ///      proof it is OUR factory — a typo'd or stale entry can point at someone else's contract.
+    ///      A foreign contract would have to echo the exact class constant to get past this —
+    ///      refuse to mirror from or send admin transactions into anything failing it.
     function _isConfigured(address factory) internal view returns (bool) {
         IApfIntrospect apf = IApfIntrospect(factory);
         require(
@@ -122,38 +122,5 @@ abstract contract NetworkConfig is Script {
             return;
         }
         vm.writeJson(vm.toString(addr), NETWORKS_JSON, string.concat(".", network, ".deployments.", key));
-    }
-
-    /// @dev Initial DEFAULT_CLASS envelope — a permissive "majors" baseline that makes a freshly
-    ///      deployed factory usable for any feed immediately. The admin/multisig should review and
-    ///      re-tune it (or assign specific feed classes via setEnvelope/setFeedClass) post-deploy.
-    ///
-    ///      ONE definition, shared by DeployProduction and RedeployAnchorFactory — a single shared
-    ///      function instead of two copies with a comment promising they are identical, which the
-    ///      compiler would not check.
-    function _defaultEnvelope() internal pure returns (IAnchoredProviderFactory.Envelope memory) {
-        return IAnchoredProviderFactory.Envelope({
-            // MUST be > 0: the provider constructor rejects minMargin == 0 (MinMarginZero). This is
-            // the LOWER BOUND on what a provider may be created with, not a margin itself.
-            //
-            // A zero floor leaves the band resting entirely on the oracle's own
-            // spread: with minMargin == 0 and spreadBps == 1 the band is ~0.0001% wide, passes every
-            // guard, and the provider still reports isProvider() == true. A positive minMargin is the
-            // only band term that does not depend on the oracle's spread — which is why it may not be
-            // zero, and why lowering it moves toward that case rather than away from it.
-            //
-            // 0.001 bps is a deliberately loose floor: it lets a curator opt
-            // into a much tighter band. The protection it weakens is a FLOOR, not a ceiling, so a
-            // curator who wants 1 bps still gets it by asking for it.
-            minMarginMin: 1e11, // 0.001 bps (BPS_BASE_U scale, 1 bps = 1e14)
-            minMarginMax: 1e15, // 10 bps (BPS_BASE_U scale, 1 bps = 1e14)
-            stalenessMin: 0, // same-block reference allowed
-            // Bounds BOTH legs' staleness AND — because there is no cross-leg skew bound — the width
-            // of the free option on a synthetic cross: two legs each within this window may be up to
-            // this far apart in observation time. Keep it tight for two-feed classes.
-            stalenessMax: 60, // up to 60s old
-            spreadMultMax: 2e18, // 2.0x ceiling for per-leg spread multipliers
-            exists: false // set by the factory
-        });
     }
 }
