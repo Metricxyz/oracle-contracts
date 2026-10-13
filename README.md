@@ -72,8 +72,8 @@ Consumer (pool / protocol)
 ## Quickstart
 
 ```bash
-git clone --recurse-submodules git@github.com:Metricxyz/oracles-contracts-public.git
-cd oracles-contracts-public
+git clone --recurse-submodules git@github.com:Metricxyz/oracle-contracts.git
+cd oracle-contracts
 forge build
 forge test
 ```
