@@ -1,0 +1,448 @@
+// SPDX-License-Identifier: BUSL-1.1
+pragma solidity ^0.8.28;
+
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import {Codebook256} from "../utils/Codebook256.sol";
+import {U64x32} from "../utils/U64x32.sol";
+
+import {OracleBase} from "./OracleBase.sol";
+
+import {TimeMs, toTimeMs} from "../utils/TimeMs.sol";
+import {ICompressedOracleV1} from "../../interfaces/ICompressedOracleV1.sol";
+
+/// @notice Registrationless compressed oracle: a feed's LOCATION is its identity.
+///         There is no feed registry — the feedId packs (creator, chainid, slotIndex,
+///         positionIndex) and every read decodes its coordinates straight from the id:
+///
+///           feedId = creator << 96 | block.chainid << 16 | slotIndex << 8 | positionIndex
+///
+///         A creator owns 256 slots × 4 positions in their own namespace and simply
+///         pushes into them (directly, or through pushers delegated via `allowPushers`).
+///         A never-pushed slot reads as price 0 / timestamp 0, which every consumer
+///         already rejects; a never-pushed position in a written slot reads price 0 with
+///         the slot's timestamp, and its zero price halts consumers. No seeding or creation
+///         step is needed.
+contract CompressedOracleV1 is OracleBase, ICompressedOracleV1 {
+    /// @notice Oracle family discriminator for off-chain introspection.
+    string public constant kind = "compressed";
+    /// @dev Discriminates the PUSH WIRE FORMAT for off-chain pushers: push calldata is prefixed with
+    ///      one byte that the fallback skips without checking. Pushers send 0x00, and no selector of
+    ///      this contract starts with 0x00, so a push cannot be dispatched to a function. Builds that
+    ///      share this version share that format.
+    string public constant version = "1.1.0";
+
+    mapping(address => address) public namespaceRemapping;
+
+    /// @notice Per (pusher, creator) high-water mark of the last consumed consent deadline.
+    ///         `allowPushers` requires each new consent to carry a STRICTLY GREATER deadline, so a
+    ///         signature is single-use: once consumed it can never re-establish the delegation
+    ///         (e.g. after the pusher called `revokePusher`). The deadline doubles as a monotonic
+    ///         nonce, so a consent cannot be replayed even before its deadline passes.
+    mapping(address pusher => mapping(address creator => uint256 deadline)) public usedPusherDeadline;
+
+    uint256 private constant MAX_PER_SLOT = 4;
+
+    uint256 private constant X48 = 0xFFFFFFFFFFFF;
+    uint256 private constant X56 = 0xFFFFFFFFFFFFFF;
+    uint256 private constant X80 = 0xFFFFFFFFFFFFFFFFFFFF;
+
+    constructor(address _owner, uint256 maxTimeDrift) OracleBase(_owner, maxTimeDrift) {
+        // feedIds reserve 80 bits for the chain id (EIP-2294 caps real ids well below that).
+        require(block.chainid <= X80);
+    }
+
+    /*
+     *
+     * feedId codec
+     *
+     */
+
+    /// bits [255:96] creator, [95:16] chainid, [15:8] slotIndex, [7:0] positionIndex.
+    function feedIdOf(address creator, uint8 slotIndex, uint8 positionIndex) public view returns (bytes32) {
+        return bytes32(uint256(uint160(creator)) << 96 | block.chainid << 16 | uint256(slotIndex) << 8 | positionIndex);
+    }
+
+    /// Decodes and VALIDATES a feedId: a foreign-chain id or an out-of-range position
+    /// does not exist on this oracle (`FeedNotFound`).
+    function _unpackFeedId(bytes32 feedId)
+        internal
+        view
+        returns (address creator, uint8 slotIndex, uint8 positionIndex)
+    {
+        uint256 raw = uint256(feedId);
+        require((raw >> 16) & X80 == block.chainid, FeedNotFound(feedId));
+        positionIndex = uint8(raw);
+        require(positionIndex < MAX_PER_SLOT, FeedNotFound(feedId));
+        slotIndex = uint8(raw >> 8);
+        creator = address(uint160(raw >> 96));
+        require(creator != address(0), FeedNotFound(feedId));
+    }
+
+    /// Default guard authority, until an explicit stateGuard is accepted: the feed's creator,
+    /// decoded from the feedId itself.
+    function _defaultGuard(bytes32 feedId) internal view override returns (address creator) {
+        (creator,,) = _unpackFeedId(feedId);
+    }
+
+    /*
+     *
+     * Views
+     *
+     */
+
+    function getSlotLayout(bytes32 feedId) external view override returns (SlotLayout memory _layout) {
+        (address creator, uint8 slotIndex,) = _unpackFeedId(feedId);
+        _layout = _loadSlotLayout(_oracleSlot(creator, slotIndex));
+    }
+
+    function getCompressedOracle(bytes32 feedId)
+        external
+        view
+        override
+        returns (CompressedOracleData memory data, TimeMs timestamp)
+    {
+        (address creator, uint8 slotIndex, uint8 positionIndex) = _unpackFeedId(feedId);
+        SlotLayout memory _layout = _loadSlotLayout(_oracleSlot(creator, slotIndex));
+
+        data = _selectCompressedData(_layout, positionIndex);
+        timestamp = _layout.timestampMs;
+    }
+
+    function getOracleData(bytes32 feedId) public view override returns (OracleData memory data) {
+        (address creator, uint8 slotIndex, uint8 positionIndex) = _unpackFeedId(feedId);
+
+        SlotLayout memory _layout = _loadSlotLayout(_oracleSlot(creator, slotIndex));
+        CompressedOracleData memory compressed = _selectCompressedData(_layout, positionIndex);
+
+        if (compressed.s1 == 0xff && compressed.s0 == 0xff) {
+            // Reserved 0xff/0xff codebook combo = stalled marker → return price 0, timestampMs 0 and
+            // the stall sentinel (65535) in both spreads, so price() yields mid 0, spread 65535 and
+            // refTime 0 and the provider halts. This pair is the only EXPLICIT stall marker (stale,
+            // zero or guard-breaching data, and an extreme confidenceParam, halt providers too): a
+            // genuine wide spread saturates at Codebook256.MAX_VALUE = 10_000, which in 0.01-bps
+            // units is 1% — well below the plain PriceProvider's 5% circuit breaker, so a compressed
+            // feed can never trip that breaker no matter how wide the real market gets.
+            data.spread1 = STALL_SPREAD;
+            data.spread0 = STALL_SPREAD;
+            return data;
+        }
+
+        data.price = U64x32.decode(compressed.p);
+        data.spread0 = _decodeCodebookIndex(compressed.s0);
+        data.spread1 = _decodeCodebookIndex(compressed.s1);
+        data.timestampMs = _layout.timestampMs;
+    }
+
+    /// @dev Decodes the slot word stored at `slotIndex`, which is the full storage key from
+    ///      `_oracleSlot` (creator << 96 | slot index), not the 8-bit slot index.
+    function _loadSlotLayout(bytes32 slotIndex) internal view returns (SlotLayout memory _layout) {
+        uint256 slotValue;
+        assembly ("memory-safe") {
+            slotValue := sload(slotIndex)
+        }
+
+        _layout.timestampMs = toTimeMs(slotValue >> 8 & X56);
+
+        _layout.oracle0 = _decodeCompressedOracleData(uint48((slotValue >> 208) & X48));
+        _layout.oracle1 = _decodeCompressedOracleData(uint48((slotValue >> 160) & X48));
+        _layout.oracle2 = _decodeCompressedOracleData(uint48((slotValue >> 112) & X48));
+        _layout.oracle3 = _decodeCompressedOracleData(uint48((slotValue >> 64) & X48));
+    }
+
+    function _selectCompressedData(SlotLayout memory _layout, uint8 index)
+        internal
+        pure
+        returns (CompressedOracleData memory data)
+    {
+        if (index == 0) return _layout.oracle0;
+        if (index == 1) return _layout.oracle1;
+        if (index == 2) return _layout.oracle2;
+        if (index == 3) return _layout.oracle3;
+        revert InvalidPosition(index);
+    }
+
+    function _decodeCompressedOracleData(uint48 raw) internal pure returns (CompressedOracleData memory data) {
+        data.p = uint32(raw >> 16);
+        data.s0 = uint8((raw >> 8) & 0xFF);
+        data.s1 = uint8(raw & 0xFF);
+    }
+
+    function _encodeCompressedOracleData(CompressedOracleData memory data) internal pure returns (uint48 raw) {
+        raw = (uint48(data.p) << 16) | (uint48(data.s0) << 8) | uint48(data.s1);
+    }
+
+    function _decodeCodebookIndex(uint8 index) internal pure returns (uint16 value) {
+        bool ok;
+        (value, ok) = Codebook256.decode(index);
+        if (!ok) revert CodebookDecodeFailed(index);
+    }
+
+    /// @notice Unified read path shared with the providers oracle. The compressed oracle is open, so
+    ///         reads are permissionless and `pool` carries no authority — see the caveat below.
+    /// @dev    NOT view, because it emits `PriceRead`. That event is the read half of the off-chain
+    ///         builder's (oracle, feed) join: `FeedUpdated(feedId)` sequences the maker update ahead
+    ///         of the matching `PriceRead(pool, feedId)` on the same oracle. Every oracle family
+    ///         emits `FeedUpdated` on write; `PriceRead` supplies the other half of the join.
+    ///
+    ///         TWO LIMITS:
+    ///
+    ///         `pool` is a CLAIM, not a fact. The providers oracle verifies it — `IPool(pool).inSwap()
+    ///         == msg.sender` binds the read to a pool that authorized the calling provider — but this
+    ///         oracle is permissionless and has no such binding. Called through a price provider it
+    ///         is the real pool (the provider forwards its own msg.sender); called directly it is
+    ///         whatever the caller passed. Attribute accordingly.
+    ///
+    ///         The log is NOT a complete record of reads. This contract is open: it
+    ///         inherits `Extsload`, and `getOracleData` / `getOracleDataBulk` stay `view`. Anyone can
+    ///         read the same data through those and emit nothing. `PriceRead` covers the `price()`
+    ///         path, not every read.
+    function price(bytes32 feedId, address pool)
+        external
+        returns (uint256 mid, uint256 spread, uint16 spread1, uint256 refTime)
+    {
+        (mid, spread, spread1, refTime) = _price(feedId);
+        emit PriceRead(pool, feedId);
+    }
+
+    function _price(bytes32 feedId)
+        internal
+        view
+        returns (uint256 mid, uint256 spread, uint16 spread1, uint256 refTime)
+    {
+        OracleData memory data = getOracleData(feedId);
+        return (uint256(data.price), uint256(data.spread0), data.spread1, data.timestampMs.toSeconds());
+    }
+
+    /*
+     *
+     * Pusher delegation
+     *
+     */
+
+    /// @notice Delegates pusher wallets into the caller's namespace. The pusher's EIP-191
+    ///         signature is REQUIRED, so nobody can remap a foreign pusher
+    ///         wallet into their own namespace and silently swallow its pushes. The
+    ///         deadline is likewise required and, via `usedPusherDeadline`, doubles as a
+    ///         monotonic nonce: each consent must carry a strictly greater deadline than the
+    ///         last one consumed for this (pusher, creator) pair, so a spent signature can
+    ///         never be replayed to re-establish a delegation AFTER the pusher revoked it.
+    function allowPushers(uint256 deadline, address[] calldata pushers, bytes[] memory signatures) external {
+        _ensureDeadline(deadline);
+
+        uint256 l = pushers.length;
+        require(l == signatures.length);
+        for (uint256 i; i < l; i++) {
+            address pusher = pushers[i];
+
+            if (pusher == msg.sender) {
+                revert NoSelfRemapping();
+            }
+
+            bytes32 hash = MessageHashUtils.toEthSignedMessageHash(
+                keccak256(abi.encode(block.chainid, address(this), deadline, pusher, msg.sender))
+            );
+            require(pusher == ECDSA.recover(hash, signatures[i]));
+
+            // Consume the consent: its deadline must be strictly newer than any already used,
+            // making the signature single-use (replay after revoke reverts).
+            if (deadline <= usedPusherDeadline[pusher][msg.sender]) revert StaleConsent();
+            usedPusherDeadline[pusher][msg.sender] = deadline;
+
+            namespaceRemapping[pusher] = msg.sender;
+            emit PusherAuthorized(pusher, msg.sender);
+        }
+    }
+
+    /// @notice Contract-pusher variant: consent is proven by a LIVE `isPusher(creator)`
+    ///         staticcall instead of a signature, so there is nothing to replay and no
+    ///         deadline is needed.
+    /// @dev    ONE namespace slot per pusher, overwritten by whichever creator authorizes last. This
+    ///         mechanism exists to let a SINGLE feed creator unblock its own stuck nonce — it is not
+    ///         a way to share one pusher contract between creators, and nothing here prevents that
+    ///         misuse. If two creators both authorize the same pusher contract, the second silently
+    ///         takes the namespace. The first cannot remove it with `removePushers`, which reverts once
+    ///         the slot belongs to someone else, but can reclaim it by authorizing again while the
+    ///         pusher still answers `isPusher` for it — so the two creators can take it back and forth.
+    ///         A word pushed after the takeover lands in the wrong creator's namespace and reads back
+    ///         as fresh, valid data — it is not caught by the stale-data fail-close. Do not share
+    ///         pusher contracts.
+    function allowContractPushers(address[] calldata pushers) external {
+        uint256 l = pushers.length;
+        for (uint256 i; i < l; i++) {
+            address pusher = pushers[i];
+
+            if (pusher == msg.sender) {
+                revert NoSelfRemapping();
+            }
+
+            (bool ok, bytes memory res) = pusher.staticcall(abi.encodeWithSignature("isPusher(address)", msg.sender));
+            require(ok);
+            bool allowed = abi.decode(res, (bool));
+            require(allowed);
+
+            namespaceRemapping[pusher] = msg.sender;
+            emit PusherAuthorized(pusher, msg.sender);
+        }
+    }
+
+    /// @notice Allows a pusher to self-revoke their delegation. After revocation the
+    ///         wallet pushes into its OWN namespace again (the registrationless default).
+    function revokePusher() external {
+        address creator = namespaceRemapping[msg.sender];
+        if (creator == address(0) || creator == msg.sender) revert NoSelfRemapping();
+        namespaceRemapping[msg.sender] = address(0);
+        emit PusherRevoked(msg.sender, creator);
+    }
+
+    function removePushers(address[] calldata pushers) external {
+        uint256 l = pushers.length;
+        for (uint256 i; i < l; i++) {
+            address pusher = pushers[i];
+            if (pusher == msg.sender) {
+                revert NoSelfRemapping();
+            }
+
+            if (namespaceRemapping[pusher] == msg.sender) {
+                namespaceRemapping[pusher] = address(0);
+                emit PusherRevoked(pusher, msg.sender);
+            } else {
+                revert InvalidManager(msg.sender);
+            }
+        }
+    }
+
+    /*
+     *
+     * Push paths
+     *
+     */
+
+    /// @notice Single-slot update authorized by the creator's signature. The signed slot
+    ///         word carries its own 56-bit timestamp, so replay is neutralized by the
+    ///         monotonicity check below — no deadline is needed.
+    function updateBySignature(address feedCreator, uint256 newSlotValue, bytes calldata signature)
+        external
+        override
+        returns (bool)
+    {
+        require(feedCreator != address(0), InvalidNamespace());
+
+        uint256 namespace;
+        assembly ("memory-safe") {
+            namespace := shl(96, feedCreator) // [creator:20][zeros:12]
+        }
+
+        uint8 slotId = uint8(newSlotValue); // LSB
+        TimeMs timestampMs = toTimeMs(newSlotValue >> 8 & X56);
+        timestampMs.revertIfAfterBlockTimeWithDrift(MAX_TIME_DRIFT);
+        bytes32 key = bytes32(namespace | uint256(slotId));
+        uint256 old = uint256(_loadStorage(key));
+        TimeMs oldTimestampMs = toTimeMs(old >> 8 & X56);
+
+        bool newer = timestampMs.isAfter(oldTimestampMs);
+        if (!newer) {
+            return false;
+        }
+
+        bytes32 hash = MessageHashUtils.toEthSignedMessageHash(
+            keccak256(abi.encode(block.chainid, address(this), feedCreator, newSlotValue))
+        );
+        require(feedCreator == ECDSA.recover(hash, signature));
+
+        _writeStorage(key, bytes32(newSlotValue & ~uint256(0xff)));
+        _notarizeSlot(feedCreator, slotId, newSlotValue);
+
+        return true;
+    }
+
+    /// @notice Push path. Calldata = [prefix:1] + N × 32-byte slot words:
+    ///         [data0:6][data1:6][data2:6][data3:6][ts:7][slotId:1]
+    ///         The prefix byte is skipped and not checked; pushers send 0x00 (see `version`).
+    ///         The sender pushes into `namespaceRemapping[msg.sender]`, falling back to
+    ///         its OWN namespace — a creator needs zero setup transactions to start
+    ///         pushing. Each word carries its own timestamp, gated by monotonicity and by
+    ///         a future-drift check on whole seconds (floor(timestampMs / 1000) <= block.timestamp +
+    ///         MAX_TIME_DRIFT), so there is no deadline prefix. A word that is not newer is skipped; a
+    ///         word beyond the drift reverts the whole push (FutureTimestamp).
+    fallback() external override {
+        uint256 end;
+        uint256 namespace;
+
+        address creator = namespaceRemapping[msg.sender];
+        if (creator == address(0)) creator = msg.sender;
+
+        assembly ("memory-safe") {
+            end := sub(calldatasize(), 1)
+            namespace := shl(96, creator) // [creator:20][zeros:12]
+        }
+
+        // 4 * 6 + 7 + 1 = 32 bytes per slot
+        if (end == 0 || end % 32 != 0) revert BadCalldataLength();
+
+        for (uint256 ptr = 1; ptr < end; ptr += 32) {
+            uint256 word;
+            assembly ("memory-safe") {
+                word := calldataload(ptr)
+            }
+            // casting to 'uint8' is safe: we want the LSB
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint8 slotId = uint8(word);
+            TimeMs timestampMs = toTimeMs(word >> 8 & X56);
+            timestampMs.revertIfAfterBlockTimeWithDrift(MAX_TIME_DRIFT);
+            bytes32 key = bytes32(namespace | uint256(slotId));
+            uint256 old = uint256(_loadStorage(key));
+            TimeMs oldTimestampMs = toTimeMs(old >> 8 & X56);
+
+            bool newer = timestampMs.isAfter(oldTimestampMs);
+            if (!newer) continue;
+
+            _writeStorage(key, bytes32(bytes32(word & ~uint256(0xff))));
+            _notarizeSlot(creator, slotId, word);
+        }
+    }
+
+    /*
+     *
+     * Internals
+     *
+     */
+
+    function _loadStorage(bytes32 slot) internal view returns (bytes32 s) {
+        assembly ("memory-safe") {
+            s := sload(slot)
+        }
+    }
+
+    function _writeStorage(bytes32 slot, bytes32 data) internal {
+        assembly ("memory-safe") {
+            sstore(slot, data)
+        }
+    }
+
+    function _oracleSlot(address creator, uint8 slotIndex) internal pure returns (bytes32 slot) {
+        assembly ("memory-safe") {
+            slot := or(shl(96, creator), slotIndex)
+        }
+    }
+
+    /// @notice Quote-side notarization for the builder's (oracle, feed) join. A push writes a whole
+    ///         slot word (up to 4 packed feed positions) under one monotonic timestamp, so each live
+    ///         position in an accepted advance is a feed that was written — emit one FeedUpdated per
+    ///         non-empty position. Called only after an accepted write (the monotonic gate already
+    ///         rejected older words), so a stale push emits nothing. Only the feed id is load-bearing
+    ///         for the join, so no price/spread is decoded here — the notarization stays a bare LOG.
+    function _notarizeSlot(address creator, uint8 slotId, uint256 newWord) internal {
+        for (uint256 i; i < MAX_PER_SLOT; ++i) {
+            // safe: the & X48 mask keeps only the low 48 bits, so the uint48 cast never truncates.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint48 packed = uint48((newWord >> (208 - 48 * i)) & X48);
+            // Skip never-set positions (packed == 0) AND the reserved 0xff/0xff stall/deactivation
+            // marker (low 16 bits == 0xffff): neither is a live quote, so neither notarizes to the
+            // (oracle, feed) join. Mirrors the stall check in getOracleData (s0 == 0xff && s1 == 0xff).
+            if (packed == 0 || (packed & 0xffff) == 0xffff) continue;
+
+            emit FeedUpdated(bytes32(uint256(uint160(creator)) << 96 | block.chainid << 16 | uint256(slotId) << 8 | i));
+        }
+    }
+}
