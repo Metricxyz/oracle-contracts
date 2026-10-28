@@ -1,0 +1,26 @@
+tree 8a9e7651a46392617f9af51c868a768e5e20c6d8
+parent 28d1073651c81afdbd8f5f05304b7ff5710cd0ab
+parent 5354fc538d14392bd280b566299c6b8d500c070b
+author semyon-metric <semyon@metric.xyz> 1788941542 +0300
+committer GitHub <noreply@github.com> 1788941542 +0300
+gpgsig -----BEGIN PGP SIGNATURE-----
+ 
+ wsFcBAABCAAQBQJqoRTnCRC1aQ7uu5UhlAAAn4AQABsUAgvrGG2BPgOEK1Pyq3sT
+ A3Ib93D8lmJXQW+/AFPNhF0jlKNRuGDdxp24izGQ5ezh9BIZmw8Pie5NaIYm7urE
+ Pz3ZVeTx7yVfXuUH2o/mnENyjTZm1ylxZkFt783JzIPdmA8VscQmlHMu6sAt48eW
+ xMEVwJUNDYmrP6RVNSBA9GFAMAN03JKRkfVeoxxpjWB4YhPYyHyt6GePufCfC4qR
+ Sz2u2cXroCXxyGTf+py/PJJG2Km3S1AnfmFPNFTYCBKx0/T/2AqE+SQRv+xpJu8a
+ 240ivcQxI5JA5CGCyqvGYetCjWSocp0trQoCiPZX1/UsBIDPrNjRydFgHf3f341A
+ HM2ve0/SO1O7Sh5YmjRdg6InXeo95dDZxZ4xirWEWy96ABgamSKaPkkqtco98tD5
+ q9764Rf/4EJS9RYbzrFY9bvxgCZ8f5kkpviSJmVaOSda7st/syGDFo6TVffLLdFl
+ XKUZ4wRLzDLzf5tvwdIvjeUMpyBAiCNjBEqZ6DoB92nJ+V9tJoqU8d/3Dkf8nX/L
+ zgf6jHGaMBfVuQkdO54ZMwiNqPCwHVu6eD4KCnrCB+0DAGxxd/K07OlEK+tXcagW
+ Wa/7hWQluFpIux7o1vrXWSyHnhaZVNeI3axrM3BcFpp/A4uq8D5HhEj6pofp+uP6
+ U/FOlLoAFGkisPPz/8bo
+ =7Buz
+ -----END PGP SIGNATURE-----
+ 
+
+Merge pull request #53 from Metricxyz/fix/oracle-interval-safety
+
+fix: preserve oracle uncertainty in anchored quotes
