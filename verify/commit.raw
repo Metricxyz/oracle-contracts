@@ -1,0 +1,27 @@
+tree f6cdc7e1fe4b26c3698870b5d3dbda16d1b38c11
+parent 692e1f6005daba4c1d88a7274d544dd63cc0ae44
+author Deleted <defias49@protonmail.com> 1780236176 +0300
+committer Deleted <defias49@protonmail.com> 1780324188 +0300
+
+feat(oracle): read-access / abuse-protection layer for providers oracle
+
+Rename contracts/oracles/pyth/ -> providers/ (shared base for Pyth and
+Chainlink), add a ChainlinkOracle skeleton, and add an abuse-protection
+read layer to the providers OracleBase:
+
+- IPoolFactory interface (isPool, inSwap) consumed by the oracle.
+- Per-feed paid pool registration (register, payable) validated via an
+  approved pool factory; ADMIN-managed approved-factory set; per-pool
+  blacklist (deny-list) with paid redemption; external-integrator
+  whitelist with its own read path; settable registrationFee.
+- Monetized on-chain read price(feedId, factory): approved factory +
+  inSwap proof + registeredPool + blacklist, emits PriceRead; plus
+  integratorPrice for whitelisted integrators. View reads stay open,
+  blacklist-gated on msg.sender.
+- oracleData made internal and Extsload dropped from the providers
+  OracleBase so the blacklist read-gate has no raw storage-slot bypass.
+- Move EthWithdrawn/withdrawEth into the shared base/interface.
+- Tests (OracleBaseAbuseProtection.t.sol, MockPoolFactory) + EN/RU
+  integration docs; exclude debug.t.sol from forge test.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

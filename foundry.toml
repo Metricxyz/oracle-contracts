@@ -1,0 +1,21 @@
+[profile.default]
+src = "contracts"
+out = "out"
+libs = ["node_modules", "lib"]
+remappings = [
+    "forge-std/=lib/forge-std/src/",
+    "@openzeppelin/=lib/openzeppelin-contracts/",
+]
+ignored_error_codes = [2018]
+fs_permissions = [{ access = "read-write", path = "deployments.json"}, { access = "read", path = "./XScanTokens"}, { access = "read-write", path = "./script/config"}]
+
+
+no_match_path = "{*/stash*,*/debug.t.sol}"
+
+evm_version = 'prague'
+solc = '0.8.33'
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
