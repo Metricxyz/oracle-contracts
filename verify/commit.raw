@@ -1,0 +1,12 @@
+tree 0cf7cd912b2274bedeee6bdbbc70b1713f0fcb0f
+parent eda97bbcc1d33dd6c86f6993fa43d4e206755df0
+author Deleted <defias49@protonmail.com> 1780242559 +0300
+committer Deleted <defias49@protonmail.com> 1780324361 +0300
+
+docs(oracle): note PYTH_VERIFICATION_FEE is an intentional cost trade-off
+
+The fixed 1-wei verification fee paid from the contract balance keeps the
+price-update path cheap; if Pyth raises its on-chain verification_fee above
+this, pushes revert until the constant is bumped (redeploy) — accepted.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
