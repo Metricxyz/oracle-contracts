@@ -1,0 +1,26 @@
+tree 0f4680c710bcc8821ffbb3cc95861f770ca53197
+parent 1fa5e10c6eafc505f15a7953ab17e7f97059ebd6
+parent 6f73f20ea00086d3d1121f4f9111dcd913d1f86e
+author christos-metric <christos@metric.xyz> 1783075313 +0300
+committer GitHub <noreply@github.com> 1783075313 +0300
+gpgsig -----BEGIN PGP SIGNATURE-----
+ 
+ wsFcBAABCAAQBQJqR5HyCRC1aQ7uu5UhlAAAKcIQALGJZ69w4EQpSm50FkD2l0zW
+ x6vPxrchZpWKlb+PGhr9Ml3F7UhQVj73AW9U16BPidYtYGEuTkc29Ct7zw0Kr+xa
+ SgUcIj55jyqxD9IP9WPv3FFrSKxSFxFuQgpLnzZuwQ8Run0MTa+QzPsZWVSFIH/B
+ 0pT6z0LHd3Z+/+l0xjCB+O6qRb2y0izFUgz9l2MYUHSrr1UrG3aTwjM850dVcdQ4
+ Bxu+xiqYOVTseHXPNDZE15Y1p28UQMWEWDpp1QkrPZoCPzxpExPlDp4D94+KtU67
+ iFnT5SgHFW1q7jYCkfF9WC6hMzTClyEaESCuKDG51VYNFelwkUOEdKKTj3zI3rm1
+ bYqiGByDfUB3oOPzubs/f4WPdaJLSYtBUdkwPriI07lAcsWPgpIuwKoblYhFBskQ
+ vCVrreklkDmYcq6NB74IGOaUHyRZMw8yKu1zugRWXVPL3lWidVhAvYRGb2EA3BAu
+ 9GFfrvG+4UnaHD/DuKqKiGPq2PzNQELORbMpvV3uR9d+cQwlnYOX4lIiikwCciwj
+ xJcaTbYxjiBEMvYJ0Mx4WJGMUh/eagjOD/vYq984/qP2GgF8INyPqzYUm1p/Jde0
+ yoYofm+gJpTgoLoRAGXNteTFiyWPyr30B/hrztG0Dh5Z1tb2Ossa1H5Dix4jTUQu
+ EPWim3ilERl3mEiDAqbM
+ =5C2s
+ -----END PGP SIGNATURE-----
+ 
+
+Merge pull request #6 from Oracle-Based-Pool/chore/add-licenses
+
+chore: add MIT and BUSL licenses

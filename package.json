@@ -1,0 +1,34 @@
+{
+  "name": "cool-amm",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "codebook:generate": "",
+    "coverage": "COVERAGE_MODE=1 forge coverage --ir-minimum --report lcov && genhtml -o coverage lcov.info --branch-coverage",
+    "coverage:serve": "npx http-server ./coverage/ --username coverage --password '?_password123'",
+    "registry:update": "node contract-registry/update.mjs",
+    "registry:serve": "node contract-registry/server.mjs",
+    "registry:start": "pm2 start contract-registry/ecosystem.config.cjs",
+    "registry:stop": "pm2 stop contract-registry",
+    "registry:restart": "pm2 restart contract-registry",
+    "registry:logs": "pm2 logs contract-registry",
+    "config:serve": "node config-ui/server.mjs",
+    "config:start": "pm2 start config-ui/ecosystem.config.cjs",
+    "config:stop": "pm2 stop config-ui",
+    "config:restart": "pm2 restart config-ui",
+    "config:logs": "pm2 logs config-ui"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.8",
+    "forge-std": "github:foundry-rs/forge-std#v1.9.4",
+    "prettier": "^3.0.0",
+    "prettier-plugin-solidity": "^1.3.1",
+    "typescript": "~5.8.0",
+    "viem": "^2.37.9"
+  },
+  "dependencies": {
+    "@pythnetwork/pyth-lazer-sdk": "^5.2.1",
+    "dotenv": "^17.2.3",
+    "jsdom": "^28.0.0"
+  }
+}
