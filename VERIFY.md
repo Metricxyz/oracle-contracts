@@ -7,7 +7,7 @@ version named in:
 - **Zellic re-audit, September 2026** (`OMM Reaudit - Zellic Audit Report.pdf`, p. 11: "Version 8b72555ba7…")
 - **Sherlock bug bounty contest, September 2026** (`2026.09.15 - Final - Metric Public Bug Bounty Audit Contest Report`, p. 4: "Final Commit 8b72555ba7…")
 
-The public tag is a new commit (`e72b3dc`) without the private history, so its own hash is not `8b72555`. The
+The public tag is a new commit without the private history, so its own hash is not `8b72555`. The
 `contracts/` folder is unchanged, though, and git hashes let you prove that without access to the private repo.
 
 ## What the two files are
