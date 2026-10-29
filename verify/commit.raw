@@ -1,0 +1,21 @@
+tree a1d282dabb6364a96c880067ef5ff1f9cadee6ef
+parent 153ddb7c6326ada5b77ae44d616e81098715abdb
+author Semen <semen@metric.xyz> 1781638699 +0000
+committer Semen <semen@metric.xyz> 1781699339 +0000
+
+refactor: price-provider clarity renames + drop LazerConsumer USD conversion
+
+Readability renames (no behavior change):
+- cexStep -> marginStep (state/setter/event/error) across all providers,
+  interfaces and factories
+- Anchored feed ids: offchainFeedId -> baseFeedId, refFeedId -> quoteFeedId
+- Anchored spread: u -> spreadBps, U_MAX -> MAX_SPREAD_BPS, uMax -> maxSpreadBps
+  (+ envelope/error names)
+- Anchored FLOOR -> minMargin (the per-side minimum margin), FloorZero ->
+  MinMarginZero (+ envelope names)
+
+LazerConsumer: remove the USD/USDT conversion feed. Every feed is parsed
+uniformly and stored at 8 decimals as-is (no division by a USDT rate); cross-quote
+conversion is handled by AnchoredPriceProvider's synthetic ratio feed. Drops
+USD_CONVERTION_FEED_ID and the WrongUsdtFeedId/InvalidUsdtPrice errors, the
+PythOracle constructor arg (version -> 0.0.8), and the deploy-config field.

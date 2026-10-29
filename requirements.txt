@@ -1,0 +1,1 @@
+pyth-lazer-sdk/=lib/pyth-network/pyth-crosschain/lazer/contracts/evm
