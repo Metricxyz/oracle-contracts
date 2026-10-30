@@ -148,4 +148,41 @@ date of their own. This is not a plain-MIT repository — check the header of an
 
 ## Security
 
-Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
+Report vulnerabilities as described in [SECURITY.md](SECURITY.md). Audit reports are published at [docs.metric.xyz — Security and audits](https://docs.metric.xyz/reference/security-and-audits).
+
+### Audited code
+
+These contracts were developed and audited in a private repository. Each commit named in the audit reports is published here as a tag named `audit-<commit>`. A tag publishes the contracts, tests and documentation from that commit; deployment scripts and internal tooling were left out. Its `contracts/` folder is identical to the audited commit's, and the tag's `VERIFY.md` proves that from the commit hash printed in the report, without access to the private repository.
+
+| Tag | Audits | `contracts/` hash | Proof |
+| --- | --- | --- | --- |
+| [`audit-eda97bb`](https://github.com/Metricxyz/oracle-contracts/tree/audit-eda97bb) | Zellic audit (Jun 2026), audited | `b5ae57073381fae094398b12affcbe8b5012520b` | [VERIFY.md](https://github.com/Metricxyz/oracle-contracts/blob/audit-eda97bb/VERIFY.md) |
+| [`audit-a7644f6`](https://github.com/Metricxyz/oracle-contracts/tree/audit-a7644f6) | Sherlock collaborative audit (May–Jun 2026), audited | `bdc761ae585ed9f27569b79ca564537820502705` | [VERIFY.md](https://github.com/Metricxyz/oracle-contracts/blob/audit-a7644f6/VERIFY.md) |
+| [`audit-056c204`](https://github.com/Metricxyz/oracle-contracts/tree/audit-056c204) | Sherlock collaborative audit, fixes. Sherlock bug bounty contest (Jul 2026), audited | `0fb82d4cc7ebdba126ca9bc866dd85da1c7908da` | [VERIFY.md](https://github.com/Metricxyz/oracle-contracts/blob/audit-056c204/VERIFY.md) |
+| [`audit-8b72555`](https://github.com/Metricxyz/oracle-contracts/tree/audit-8b72555) | Sherlock bug bounty contest, fixes. Zellic re-audit (Sep 2026), final | `f2fd9c61adb7d3931a47f5f48718ca1e387afa2b` | [VERIFY.md](https://github.com/Metricxyz/oracle-contracts/blob/audit-8b72555/VERIFY.md) |
+| [`audit-edbc5f0`](https://github.com/Metricxyz/oracle-contracts/tree/audit-edbc5f0) | Zellic re-audit (Sep 2026), starting point: the re-audit reviewed the changes from here to `8b72555` | `5ace29538dea65022bcf781a992498d476bf5114` | [VERIFY.md](https://github.com/Metricxyz/oracle-contracts/blob/audit-edbc5f0/VERIFY.md) |
+
+In `audit-056c204`, the RPC API key in `foundry.toml` was replaced with `${ALCHEMY_API_KEY}`.
+
+To verify a tag, clone it and run its check script (Python 3 and git only):
+
+```bash
+git clone --branch audit-8b72555 https://github.com/Metricxyz/oracle-contracts.git
+cd oracle-contracts
+python verify/verify.py .
+```
+
+It ends with `OK: contracts/ at this tag is identical to contracts/ in audited commit …`. Each tag's `VERIFY.md` explains the check step by step. For a quick look, compare the hash directly:
+
+```bash
+git rev-parse audit-8b72555:contracts   # f2fd9c61adb7d3931a47f5f48718ca1e387afa2b
+```
+
+### Changes since the last audit
+
+Since `8b72555`:
+
+- **New contracts, not covered by the audits above:** the multiplier oracle for tokenized stocks (`MultiplierOracle`, `ScheduledMultiplier`, and the `B20AssetParams` and `RobinhoodStockTokenParams` adapters, with the `IOracleParams` and `IScaledUIAmount` interfaces). It is deployed on Base and Robinhood only; see [DEPLOYMENTS.md](DEPLOYMENTS.md#multiplier-lane-base-and-robinhood).
+- **Quote changes:** `PriceProvider` now includes the confidence spread in its minimum ask, and `AnchoredPriceProvider` (direct, non-synthetic feeds) includes the half-spread and minimum margin in its minimum ask.
+
+Every other change is to comments and documentation.
